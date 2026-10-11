@@ -88,12 +88,23 @@ jobs:
             docker build -t agrivision_api:latest .
 
             # 5. Deploy Stack ke Docker Swarm
-            echo "[INFO] Menerapkan stack agrivision_stack ke Docker Swarm..."
-            docker stack deploy -c docker-compose.yml agrivision_stack
+            echo "[INFO] Menerapkan stack agrivision ke Docker Swarm..."
+            docker stack deploy -c docker-compose.yml agrivision
 
             # 6. Rolling update service API secara zero-downtime
             echo "[INFO] Menjalankan zero-downtime rolling update..."
-            docker service update --force agrivision_stack_api
+            docker service update --force agrivision_api
+
+            # 7. Sinkronisasi konfigurasi Ingress ke /opt/priv-ingress/conf.d jika direktori ada
+            if [ -d "/opt/priv-ingress/conf.d" ]; then
+              echo "[INFO] Menyinkronkan konfigurasi Ingress ke /opt/priv-ingress/conf.d/..."
+              cp -f agrivision.pbjt.ac.id.conf /opt/priv-ingress/conf.d/
+              INGRESS_ID=$(docker ps -q -f name=priv-ingress_nginx || docker ps -q -f name=nginx || true)
+              if [ -n "$INGRESS_ID" ]; then
+                echo "[INFO] Me-reload Nginx Ingress..."
+                docker exec $INGRESS_ID nginx -s reload || true
+              fi
+            fi
 
             echo "=========================================="
             echo "✅ Deployment Sukses!"

@@ -1,21 +1,7 @@
 version: '3.8'
 
 services:
-  # Load Balancer / Reverse Proxy
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - api
-    deploy:
-      placement:
-        constraints:
-          - node.role == manager # Nginx jalan di node manager
-
-  # FastAPI Backend Service (Bisa digandakan/di-scale)
+  # FastAPI Deep Learning Backend (MobileNetV2)
   api:
     image: agrivision_api:latest
     build: .
@@ -23,18 +9,39 @@ services:
       - ENVIRONMENT=production
       - TZ=Asia/Jakarta
       - HF_REPO=ginganomercy/agrivision-mobilenetv2
-      # Token HuggingFace opsional (jika repo dibuat private)
-      - HF_TOKEN=${HF_TOKEN:-} 
+      - HF_TOKEN=${HF_TOKEN:-}
     volumes:
-      - ./data:/app/data
+      - agrivision_data:/app/data
+    networks:
+      - front-tier
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     deploy:
-      replicas: 3 # Docker Swarm akan menghidupkan 3 container API sekaligus
+      replicas: 2
       update_config:
         parallelism: 1
         delay: 10s
-        order: start-first # Zero-downtime deployment
+        order: start-first # Zero-downtime rolling update
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 10
       resources:
         limits:
-          memory: 1G # Maksimal 1GB per replica (total 3GB)
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+
+volumes:
+  agrivision_data:
+    driver: local
+
+networks:
+  front-tier:
+    external: true
