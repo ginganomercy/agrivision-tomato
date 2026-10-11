@@ -33,7 +33,15 @@ jobs:
     name: 🚢 Deploy to Bare-Metal Server
     needs: test
     runs-on: ubuntu-latest
+    env:
+      HAS_TAILSCALE: ${{ secrets.TAILSCALE_AUTHKEY != '' }}
     steps:
+      - name: 🌐 Connect to Tailscale Network
+        if: env.HAS_TAILSCALE == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
       - name: 🔐 Execute Remote Deployment via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
