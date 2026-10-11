@@ -54,6 +54,7 @@ jobs:
             set -e
             DEPLOY_DIR="${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/opt/agrivision-tomato' }}"
             REPO_URL="https://github.com/ginganomercy/agrivision-tomato.git"
+            export HF_TOKEN="${{ secrets.HF_TOKEN }}"
 
             echo "=========================================="
             echo "🚀 Starting AgriVision Deployment on Bare-Metal"
@@ -62,9 +63,8 @@ jobs:
 
             # 1. Pastikan folder project ada & sinkronkan dengan git
             if [ ! -d "$DEPLOY_DIR/.git" ]; then
-              echo "[INFO] Direktori belum ada. Melakukan git clone..."
-              sudo mkdir -p "$DEPLOY_DIR"
-              sudo chown -R $USER:$USER "$DEPLOY_DIR"
+              echo "[INFO] Direktori belum ada. Menyiapkan clone..."
+              if [ "$EUID" -ne 0 ]; then sudo mkdir -p "$DEPLOY_DIR" && sudo chown -R $USER:$USER "$DEPLOY_DIR"; else mkdir -p "$DEPLOY_DIR"; fi
               git clone "$REPO_URL" "$DEPLOY_DIR"
               cd "$DEPLOY_DIR"
             else
@@ -83,11 +83,14 @@ jobs:
               docker swarm init || true
             fi
 
-            # 4. Build Docker image API dengan dependensi CPU PyTorch terbaru
+            # 4. Pastikan network front-tier ada
+            docker network inspect front-tier >/dev/null 2>&1 || docker network create --driver overlay --attachable front-tier
+
+            # 5. Build Docker image API dengan dependensi CPU PyTorch terbaru
             echo "[INFO] Membangun image Docker API..."
             docker build -t agrivision_api:latest .
 
-            # 5. Deploy Stack ke Docker Swarm
+            # 6. Deploy Stack ke Docker Swarm
             echo "[INFO] Menerapkan stack agrivision ke Docker Swarm..."
             docker stack deploy -c docker-compose.yml agrivision
 
