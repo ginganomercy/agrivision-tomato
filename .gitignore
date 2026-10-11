@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch & Large ML Artifacts (Disimpan di Hugging Face, bukan Git)
+*.pth
+*.pt
+*.onnx
+data/raw/
+**/data/raw/
+data/best_model.pth
+**/data/best_model.pth
+
+# Virtual Environments & Secrets
+venv/
+env/
+.env
+*.pem
+*.key
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# OS generated files
+.DS_Store
+Thumbs.db

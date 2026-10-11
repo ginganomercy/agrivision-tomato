@@ -1,0 +1,93 @@
+name: 🚀 Deploy AgriVision to Bare-Metal Server (Docker Swarm)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 🧪 Run Smoke & Syntax Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Linting & Smoke Test Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+
+      - name: Syntax Check with Flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 api_backend/src --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  deploy:
+    name: 🚢 Deploy to Bare-Metal Server
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔐 Execute Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ vars.SERVER_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -e
+            DEPLOY_DIR="${{ vars.DEPLOY_PATH || '/opt/agrivision-tomato' }}"
+            REPO_URL="https://github.com/ginganomercy/agrivision-tomato.git"
+
+            echo "=========================================="
+            echo "🚀 Starting AgriVision Deployment on Bare-Metal"
+            echo "Target Directory: $DEPLOY_DIR"
+            echo "=========================================="
+
+            # 1. Pastikan folder project ada & sinkronkan dengan git
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              echo "[INFO] Direktori belum ada. Melakukan git clone..."
+              sudo mkdir -p "$DEPLOY_DIR"
+              sudo chown -R $USER:$USER "$DEPLOY_DIR"
+              git clone "$REPO_URL" "$DEPLOY_DIR"
+              cd "$DEPLOY_DIR"
+            else
+              echo "[INFO] Direktori sudah ada. Menarik commit terbaru..."
+              cd "$DEPLOY_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+
+            # 2. Pindah ke direktori api_backend
+            cd "$DEPLOY_DIR/api_backend"
+
+            # 3. Pastikan Docker Swarm aktif
+            if ! docker info --format '{{.Swarm.LocalNodeState}}' | grep -q "active"; then
+              echo "[INFO] Menginisialisasi Docker Swarm..."
+              docker swarm init || true
+            fi
+
+            # 4. Build Docker image API dengan dependensi CPU PyTorch terbaru
+            echo "[INFO] Membangun image Docker API..."
+            docker build -t agrivision_api:latest .
+
+            # 5. Deploy Stack ke Docker Swarm
+            echo "[INFO] Menerapkan stack agrivision_stack ke Docker Swarm..."
+            docker stack deploy -c docker-compose.yml agrivision_stack
+
+            # 6. Rolling update service API secara zero-downtime
+            echo "[INFO] Menjalankan zero-downtime rolling update..."
+            docker service update --force agrivision_stack_api
+
+            echo "=========================================="
+            echo "✅ Deployment Sukses!"
+            echo "=========================================="
+            docker service ls

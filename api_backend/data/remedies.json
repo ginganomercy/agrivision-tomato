@@ -1,0 +1,17 @@
+{
+  "0": {
+    "name": "Bercak Daun Bakteri (Tomato___Bacterial_spot)",
+    "description": "Infeksi bakteri yang menyebabkan bercak kecil bersudut, sering kali dikelilingi halo kuning.",
+    "recommendation": "Hindari penyiraman dari atas (overhead irrigation). Gunakan bakterisida berbasis tembaga (copper-based). Pastikan sirkulasi udara baik."
+  },
+  "1": {
+    "name": "Hawar Daun (Tomato___Late_blight)",
+    "description": "Penyakit jamur yang menyebar cepat, ditandai dengan bercak coklat kehitaman pada daun.",
+    "recommendation": "Segera pangkas dan bakar daun yang terinfeksi. Gunakan fungisida berbahan aktif Mankozeb atau Klorotalonil. Kurangi kelembapan."
+  },
+  "2": {
+    "name": "Daun Sehat (Tomato___healthy)",
+    "description": "Tanaman dalam kondisi sehat dan tidak menunjukkan gejala penyakit.",
+    "recommendation": "Pertahankan rutinitas penyiraman dan pemupukan yang ada. Jaga kebersihan area lahan."
+  }
+}
