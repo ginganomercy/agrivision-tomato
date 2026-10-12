@@ -115,9 +115,11 @@ jobs:
             echo "[INFO] Menerapkan stack agrivision ke Docker Swarm..."
             docker stack deploy -c docker-compose.yml agrivision
 
-            # 8. Rolling update service API secara zero-downtime
-            echo "[INFO] Menjalankan zero-downtime rolling update..."
-            docker service update --force agrivision_api
+            # 8. Beri jeda untuk booting service dan periksa log
+            echo "[INFO] Menunggu service aktif dan memverifikasi log..."
+            sleep 15
+            docker service ps agrivision_api || true
+            docker service logs --tail 30 agrivision_api || true
 
             # 9. Sinkronisasi konfigurasi Ingress ke /opt/priv-ingress/conf.d jika direktori ada
             if [ -d "/opt/priv-ingress/conf.d" ]; then
