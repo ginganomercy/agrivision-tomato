@@ -26,7 +26,16 @@ import {
   X
 } from 'lucide-react';
 import { WorldEngine } from '../3d/engine/WorldEngine';
-import type { CameraMode, InputState, RoomTransition, InventoryItem } from '../3d/types';
+import type { 
+  CameraMode, 
+  InputState, 
+  RoomTransition, 
+  InventoryItem, 
+  InteractableTarget, 
+  DialogueNode, 
+  DialogueOption, 
+  GuildQuest 
+} from '../3d/types';
 
 interface InteractiveTomato3DProps {
   onInteract?: (action: string) => void;
@@ -73,6 +82,13 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
   const [lootToasts, setLootToasts] = useState<{ id: number; name: string; icon: string; qty: number }[]>([]);
   const [useFeedback, setUseFeedback] = useState<string | null>(null);
+
+  // Tavern RPG & Bounty Quest System State
+  const [nearbyInteractable, setNearbyInteractable] = useState<InteractableTarget | null>(null);
+  const [activeDialogue, setActiveDialogue] = useState<DialogueNode | null>(null);
+  const [isQuestBoardOpen, setIsQuestBoardOpen] = useState<boolean>(false);
+  const [guildQuests, setGuildQuests] = useState<GuildQuest[]>([]);
+  const [activeGuildQuest, setActiveGuildQuest] = useState<GuildQuest | null>(null);
 
   // 1. Detect Screen Orientation, Touch Capability, and Size Changes
   useEffect(() => {
@@ -263,6 +279,25 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
           setTimeout(() => {
             setLootToasts((prev) => prev.filter((t) => t.id !== toastId));
           }, 3200);
+        },
+        onInteractableChange: (target) => {
+          setNearbyInteractable(target);
+        },
+        onOpenDialogue: (dialogue) => {
+          setActiveDialogue(dialogue);
+        },
+        onOpenQuestBoard: (open) => {
+          setIsQuestBoardOpen(open);
+          if (open && engineRef.current) {
+            setGuildQuests(engineRef.current.getGuildQuests());
+            setActiveGuildQuest(engineRef.current.getActiveGuildQuest());
+          }
+        },
+        onActiveQuestChange: (quest) => {
+          setActiveGuildQuest(quest);
+          if (engineRef.current) {
+            setGuildQuests(engineRef.current.getGuildQuests());
+          }
         }
       }
     });
@@ -271,6 +306,8 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     engineRef.current = engine;
     setRemainingCollectibles(engine.getActiveCollectibles().length);
     setInventoryItems(engine.getInventory());
+    setGuildQuests(engine.getGuildQuests());
+    setActiveGuildQuest(engine.getActiveGuildQuest());
 
     // Keyboard Input Listeners
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -286,13 +323,21 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         engine.triggerJump();
       }
       if (key === 'shift') engine.setInput('turbo', true);
-      if (key === 'e') engine.triggerSpin();
+      if (key === 'e') {
+        if (engine.hasNearbyInteractable()) {
+          engine.triggerInteraction();
+        } else {
+          engine.triggerSpin();
+        }
+      }
       if (key === 'f' || key === 'j') engine.triggerSwordAttack();
       if (key === 'i' || key === 'b') {
         setIsInventoryOpen((prev) => !prev);
       }
       if (key === 'escape') {
         setIsInventoryOpen(false);
+        setActiveDialogue(null);
+        setIsQuestBoardOpen(false);
       }
       if (key === 'r') {
         engine.resetCharacter();
@@ -601,6 +646,40 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     }
   }, []);
 
+  const handleTriggerInteraction = useCallback(() => {
+    engineRef.current?.triggerInteraction();
+  }, []);
+
+  const handleSelectDialogueOption = useCallback((option: DialogueOption) => {
+    engineRef.current?.selectDialogueOption(option);
+  }, []);
+
+  const handleCloseDialogue = useCallback(() => {
+    engineRef.current?.closeDialogue();
+    setActiveDialogue(null);
+  }, []);
+
+  const handleAcceptQuest = useCallback((questId: string) => {
+    const success = engineRef.current?.acceptQuest(questId);
+    if (success && engineRef.current) {
+      setGuildQuests(engineRef.current.getGuildQuests());
+      setActiveGuildQuest(engineRef.current.getActiveGuildQuest());
+    }
+  }, []);
+
+  const handleClaimQuestReward = useCallback((questId: string) => {
+    const success = engineRef.current?.claimQuestReward(questId);
+    if (success && engineRef.current) {
+      setGuildQuests(engineRef.current.getGuildQuests());
+      setActiveGuildQuest(engineRef.current.getActiveGuildQuest());
+    }
+  }, []);
+
+  const handleCloseQuestBoard = useCallback(() => {
+    engineRef.current?.closeQuestBoard();
+    setIsQuestBoardOpen(false);
+  }, []);
+
   const isImmersive = isFullscreen || isMobileLandscape;
 
   return (
@@ -866,6 +945,41 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             {!isMobileLandscape && <span>Tas ({inventoryItems.length}/16)</span>}
           </button>
 
+          {/* Guild Bounty Board Button */}
+          <button
+            onClick={() => {
+              setIsQuestBoardOpen((prev) => {
+                const next = !prev;
+                if (next && engineRef.current) {
+                  setGuildQuests(engineRef.current.getGuildQuests());
+                  setActiveGuildQuest(engineRef.current.getActiveGuildQuest());
+                }
+                return next;
+              });
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: isMobileLandscape ? '6px 9px' : '7px 11px',
+              borderRadius: 10,
+              fontSize: 11,
+              fontWeight: 600,
+              background: isQuestBoardOpen ? 'rgba(217, 119, 6, 0.95)' : 'rgba(15, 23, 42, 0.85)',
+              border: `1px solid ${isQuestBoardOpen ? '#FDE047' : 'rgba(217, 119, 6, 0.5)'}`,
+              color: '#FFF',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: isQuestBoardOpen ? '0 0 14px rgba(217, 119, 6, 0.5)' : 'none',
+              transition: 'all 0.2s'
+            }}
+            title="Buka Papan Sayembara Serikat Tani (Bounty Board)"
+          >
+            <span style={{ fontSize: 13 }}>📜</span>
+            {!isMobileLandscape && <span>Sayembara</span>}
+          </button>
+
           {/* Audio FX */}
           <button
             onClick={toggleAudio}
@@ -913,46 +1027,91 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         </div>
       </div>
 
-      {/* 📜 Bounty Quest HUD Tracker */}
-      <div style={{
-        position: 'absolute',
-        top: isMobileLandscape ? 44 : 54,
-        left: 12,
-        background: 'rgba(15, 23, 42, 0.88)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        border: isQuestCompleted ? '1px solid #10B981' : '1px solid rgba(245, 158, 11, 0.6)',
-        borderRadius: 12,
-        padding: '5px 12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        boxShadow: isQuestCompleted ? '0 4px 16px rgba(16, 185, 129, 0.3)' : '0 4px 16px rgba(0, 0, 0, 0.4)',
-        zIndex: 22,
-        pointerEvents: 'none',
-        maxWidth: 280
-      }}>
-        <span style={{ fontSize: 16 }}>{isQuestCompleted ? '🏆' : '⚔️'}</span>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: '0.6px',
-            color: isQuestCompleted ? '#34D399' : '#FBBF24',
-            textTransform: 'uppercase'
-          }}>
-            {isQuestCompleted ? 'Bounty Tani Tuntas' : 'Bounty: Basmi Hama Kebun'}
-          </span>
-          <span style={{ fontSize: 11, color: '#E2E8F0', fontWeight: 600 }}>
-            {questDefeated} / 5 Hama Dikalahkan
-          </span>
+
+      {/* ⚔️ / 📜 ACTIVE GUILD BOUNTY HUD */}
+      <div 
+        onClick={() => {
+          setIsQuestBoardOpen(true);
+          if (engineRef.current) {
+            setGuildQuests(engineRef.current.getGuildQuests());
+            setActiveGuildQuest(engineRef.current.getActiveGuildQuest());
+          }
+        }}
+        style={{
+          position: 'absolute',
+          top: isMobileLandscape ? 8 : 64,
+          left: 12,
+          background: activeGuildQuest?.status === 'completed' 
+            ? 'rgba(6, 78, 59, 0.88)' 
+            : 'rgba(15, 23, 42, 0.85)',
+          border: activeGuildQuest?.status === 'completed'
+            ? '1px solid #34D399'
+            : '1px solid rgba(234, 179, 8, 0.5)',
+          borderRadius: 14,
+          padding: '7px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          boxShadow: isQuestCompleted ? '0 4px 16px rgba(16, 185, 129, 0.3)' : '0 4px 16px rgba(0, 0, 0, 0.4)',
+          zIndex: 22,
+          pointerEvents: 'auto',
+          cursor: 'pointer',
+          maxWidth: 290
+        }}
+        title="Klik untuk membuka Papan Sayembara Serikat Tani"
+      >
+        <span style={{ fontSize: 17 }}>
+          {activeGuildQuest?.status === 'completed' ? '🏆' : (activeGuildQuest?.icon || '⚔️')}
+        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+            <span style={{
+              fontSize: 9.5,
+              fontWeight: 800,
+              letterSpacing: '0.6px',
+              color: activeGuildQuest?.status === 'completed' ? '#34D399' : '#FBBF24',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {activeGuildQuest ? activeGuildQuest.title : 'Bounty: Basmi Hama Kebun'}
+            </span>
+            <span style={{ fontSize: 8.5, color: '#94A3B8', fontWeight: 700 }}>
+              [PAPAN]
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 2 }}>
+            <span style={{ fontSize: 10.5, color: '#E2E8F0', fontWeight: 600 }}>
+              {activeGuildQuest 
+                ? `${activeGuildQuest.currentCount} / ${activeGuildQuest.targetCount} ${activeGuildQuest.category === 'bounty' ? 'Hama' : activeGuildQuest.category === 'gathering' ? 'Embun' : 'Survei'}`
+                : `${questDefeated} / 5 Hama Dikalahkan`}
+            </span>
+            {activeGuildQuest && (
+              <span style={{
+                fontSize: 9.5,
+                fontWeight: 700,
+                color: activeGuildQuest.currentCount >= activeGuildQuest.targetCount ? '#34D399' : '#FEF08A'
+              }}>
+                {activeGuildQuest.currentCount >= activeGuildQuest.targetCount 
+                  ? (activeGuildQuest.status === 'completed' ? 'Tuntas' : 'Siap Klaim!') 
+                  : `+${activeGuildQuest.rewardScore}`}
+              </span>
+            )}
+          </div>
         </div>
         {/* Progress Bar */}
-        <div style={{ width: 44, height: 6, background: '#334155', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ width: 40, height: 6, background: '#334155', borderRadius: 3, overflow: 'hidden' }}>
           <div style={{
-            width: `${(questDefeated / 5) * 100}%`,
+            width: activeGuildQuest 
+              ? `${Math.min(100, (activeGuildQuest.currentCount / activeGuildQuest.targetCount) * 100)}%` 
+              : `${(questDefeated / 5) * 100}%`,
             height: '100%',
-            background: isQuestCompleted ? 'linear-gradient(90deg, #10B981, #34D399)' : 'linear-gradient(90deg, #F59E0B, #FBBF24)',
+            background: (activeGuildQuest?.currentCount || questDefeated) >= (activeGuildQuest?.targetCount || 5)
+              ? 'linear-gradient(90deg, #10B981, #34D399)'
+              : 'linear-gradient(90deg, #F59E0B, #FBBF24)',
             transition: 'width 0.3s ease'
           }} />
         </div>
@@ -1901,6 +2060,434 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
                 {useFeedback}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 💬 FLOATING PROMPT PILL (NPC / BOUNTY BOARD INTERACTION) */}
+      {nearbyInteractable && !activeDialogue && !isQuestBoardOpen && (
+        <div style={{
+          position: 'absolute',
+          bottom: isMobileLandscape ? 20 : 80,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          pointerEvents: 'auto'
+        }}>
+          <button
+            onClick={handleTriggerInteraction}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 20px',
+              background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.95), rgba(202, 138, 4, 0.95))',
+              border: '2px solid #FEF08A',
+              borderRadius: 30,
+              color: '#1C1917',
+              fontSize: 13,
+              fontWeight: 800,
+              letterSpacing: '0.3px',
+              boxShadow: '0 6px 24px rgba(234, 179, 8, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4)',
+              cursor: 'pointer',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
+            }}
+          >
+            <span style={{
+              background: '#1C1917',
+              color: '#FEF08A',
+              padding: '2px 8px',
+              borderRadius: 8,
+              fontSize: 11,
+              fontWeight: 900
+            }}>
+              E
+            </span>
+            <span>{nearbyInteractable.promptText}</span>
+          </button>
+        </div>
+      )}
+
+      {/* 💬 RPG DIALOGUE MODAL */}
+      {activeDialogue && (
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseDialogue();
+          }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(5, 5, 10, 0.65)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: isMobileLandscape ? 'center' : 'flex-end',
+            justifyContent: 'center',
+            padding: isMobileLandscape ? 12 : 24,
+            zIndex: 100,
+            pointerEvents: 'auto'
+          }}
+        >
+          <div style={{
+            width: '100%',
+            maxWidth: 640,
+            background: 'linear-gradient(145deg, rgba(30, 22, 16, 0.96), rgba(15, 23, 42, 0.98))',
+            border: '2px solid rgba(234, 179, 8, 0.6)',
+            borderRadius: 20,
+            padding: isMobileLandscape ? 14 : 20,
+            boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 30px rgba(234, 179, 8, 0.2)',
+            color: '#FFF',
+            position: 'relative'
+          }}>
+            {/* Header with Avatar & Speaker Name */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+              <div style={{
+                width: 52,
+                height: 52,
+                borderRadius: 16,
+                background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.25), rgba(16, 185, 129, 0.2))',
+                border: '2px solid #FBBF24',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 28,
+                boxShadow: '0 4px 14px rgba(0,0,0,0.4)'
+              }}>
+                {activeDialogue.speakerAvatar || activeDialogue.speakerIcon}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#FEF08A', letterSpacing: '0.4px' }}>
+                  {activeDialogue.speakerName || activeDialogue.speaker}
+                </div>
+                {activeDialogue.speakerTitle && (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#34D399', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {activeDialogue.speakerTitle}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={handleCloseDialogue}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: 'none',
+                  color: '#94A3B8',
+                  borderRadius: 8,
+                  width: 32,
+                  height: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: 16
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Speech Text */}
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.4)',
+              borderRadius: 12,
+              padding: '12px 16px',
+              marginBottom: 14,
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              fontSize: isMobileLandscape ? 12 : 13.5,
+              lineHeight: 1.6,
+              color: '#F1F5F9',
+              fontStyle: 'italic'
+            }}>
+              "{activeDialogue.text}"
+            </div>
+
+            {/* Dialogue Options List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {activeDialogue.options.map((opt, i) => {
+                const isBountyAction = opt.action === 'open_bounty_board' || opt.action === 'open_quest_board';
+                return (
+                  <button
+                    key={i}
+                    onClick={() => handleSelectDialogueOption(opt)}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      background: isBountyAction 
+                        ? 'linear-gradient(90deg, rgba(234, 179, 8, 0.25), rgba(202, 138, 4, 0.15))'
+                        : 'rgba(255, 255, 255, 0.06)',
+                      border: isBountyAction
+                        ? '1px solid rgba(234, 179, 8, 0.6)'
+                        : '1px solid rgba(255, 255, 255, 0.12)',
+                      color: isBountyAction ? '#FEF08A' : '#E2E8F0',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span style={{ color: '#FBBF24', fontSize: 13 }}>▸</span>
+                    <span>{opt.text}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📜 GUILD BOUNTY BOARD MODAL */}
+      {isQuestBoardOpen && (
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseQuestBoard();
+          }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(3, 7, 18, 0.75)',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 90,
+            pointerEvents: 'auto'
+          }}
+        >
+          <div style={{
+            width: '100%',
+            maxWidth: 720,
+            maxHeight: '90vh',
+            background: 'linear-gradient(145deg, rgba(28, 20, 14, 0.97), rgba(15, 23, 42, 0.98))',
+            border: '2px solid #D97706',
+            borderRadius: 24,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 24px 60px rgba(0, 0, 0, 0.8), 0 0 35px rgba(217, 119, 6, 0.25)',
+            color: '#FFF'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid rgba(217, 119, 6, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(0, 0, 0, 0.25)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 26 }}>📜</span>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#FEF08A', letterSpacing: '0.4px' }}>
+                    Papan Sayembara Serikat Tani
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94A3B8' }}>
+                    Pusat Kontrak Pemburu Hama & Ekspedisi Kebun Holtikultura
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseQuestBoard}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  color: '#94A3B8',
+                  borderRadius: 10,
+                  width: 32,
+                  height: 32,
+                  cursor: 'pointer',
+                  fontSize: 16
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quests Cards List */}
+            <div style={{
+              padding: '16px 20px',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}>
+              {guildQuests.map((quest) => {
+                const isQuestActive = quest.status === 'active';
+                const isCompleted = quest.status === 'completed';
+                const curCount = quest.currentCount;
+                const canClaim = isQuestActive && curCount >= quest.targetCount;
+                const progressPct = Math.min(100, Math.round((curCount / quest.targetCount) * 100));
+
+                return (
+                  <div
+                    key={quest.id}
+                    style={{
+                      background: isQuestActive 
+                        ? 'rgba(30, 41, 59, 0.7)' 
+                        : isCompleted
+                        ? 'rgba(6, 78, 59, 0.35)'
+                        : 'rgba(15, 23, 42, 0.55)',
+                      border: isCompleted
+                        ? '1px solid #10B981'
+                        : isQuestActive
+                        ? '1px solid #38BDF8'
+                        : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: 16,
+                      padding: 14,
+                      display: 'flex',
+                      flexDirection: isMobileLandscape ? 'row' : 'column',
+                      alignItems: isMobileLandscape ? 'center' : 'stretch',
+                      gap: 12,
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {/* Icon & Category */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <div style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 22
+                      }}>
+                        {quest.icon}
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: '#F8FAFC' }}>
+                            {quest.title}
+                          </span>
+                          <span style={{ fontSize: 11, color: '#FBBF24' }}>
+                            {'⭐'.repeat(quest.difficulty || 1)}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#94A3B8', lineHeight: 1.4, marginBottom: 6 }}>
+                          {quest.description}
+                        </div>
+
+                        {/* Progress and Rewards Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 10, color: '#CBD5E1', fontWeight: 600 }}>
+                              Target: {curCount}/{quest.targetCount} ({progressPct}%)
+                            </span>
+                            <div style={{ width: 60, height: 6, background: '#334155', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{
+                                width: `${progressPct}%`,
+                                height: '100%',
+                                background: canClaim || isCompleted ? '#34D399' : '#38BDF8',
+                                transition: 'width 0.3s'
+                              }} />
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5 }}>
+                            <span style={{ color: '#FBBF24', fontWeight: 700 }}>
+                              🏆 +{quest.rewardScore} Skor
+                            </span>
+                            {quest.rewardItemName && (
+                              <span style={{ color: '#38BDF8', fontWeight: 700 }}>
+                                • 🎁 {quest.rewardItemName} x{quest.rewardItemQty || 1}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Button */}
+                    <div style={{ minWidth: 140, display: 'flex', justifyContent: 'flex-end' }}>
+                      {isCompleted ? (
+                        <button
+                          disabled
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            border: '1px solid #10B981',
+                            color: '#34D399',
+                            fontSize: 11,
+                            fontWeight: 700
+                          }}
+                        >
+                          ✓ Selesai
+                        </button>
+                      ) : canClaim ? (
+                        <button
+                          onClick={() => handleClaimQuestReward(quest.id)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                            border: '1px solid #FDE047',
+                            color: '#FFF',
+                            fontSize: 11,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            boxShadow: '0 0 16px rgba(245, 158, 11, 0.5)'
+                          }}
+                        >
+                          🎁 Klaim Hadiah!
+                        </button>
+                      ) : isQuestActive ? (
+                        <button
+                          disabled
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            background: 'rgba(56, 189, 248, 0.2)',
+                            border: '1px solid #38BDF8',
+                            color: '#38BDF8',
+                            fontSize: 11,
+                            fontWeight: 700
+                          }}
+                        >
+                          ⚔️ Sedang Berjalan
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleAcceptQuest(quest.id)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            background: 'linear-gradient(135deg, #10B981, #059669)',
+                            border: 'none',
+                            color: '#FFF',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          📜 Terima Kontrak
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

@@ -4,7 +4,17 @@
  * character kinematics, collectible collision detection, and audio feedback.
  */
 import * as THREE from 'three';
-import type { CameraMode, InputState, RoomLocation, InventoryItem, WorldCallbacks, WorldEngineOptions } from '../types';
+import type { 
+  CameraMode, 
+  InputState, 
+  RoomLocation, 
+  InventoryItem, 
+  WorldCallbacks, 
+  WorldEngineOptions,
+  InteractableTarget,
+  DialogueOption,
+  GuildQuest
+} from '../types';
 import { AudioSynth } from '../audio/AudioSynth';
 import { TomatoModel } from '../models/TomatoModel';
 import { GreenhousePavilion } from '../world/GreenhousePavilion';
@@ -14,6 +24,8 @@ import { MonsterManager } from '../world/MonsterManager';
 import { CharacterController } from '../controller/CharacterController';
 import { InventoryManager } from '../world/InventoryManager';
 import { GuildTavernInterior } from '../world/GuildTavernInterior';
+import { QuestManager } from '../world/QuestManager';
+import { NPCManager } from '../world/NPCManager';
 
 export class WorldEngine {
   // Core Three.js components
@@ -35,6 +47,9 @@ export class WorldEngine {
   private controller: CharacterController;
   private inventory: InventoryManager;
   private tavernInterior: GuildTavernInterior;
+  private questManager: QuestManager;
+  private npcManager: NPCManager;
+  private activeInteractable: InteractableTarget | null = null;
 
   // State
   private inputState: InputState = {
@@ -103,6 +118,8 @@ export class WorldEngine {
     this.tomatoModel = new TomatoModel();
     this.controller = new CharacterController();
     this.tavernInterior = new GuildTavernInterior();
+    this.questManager = new QuestManager();
+    this.npcManager = new NPCManager();
 
     // 4b. Initialize Inventory System & Wire Callbacks
     this.inventory = new InventoryManager(
@@ -110,7 +127,26 @@ export class WorldEngine {
       (name, icon, qty) => this.callbacks.onItemLooted?.(name, icon, qty)
     );
 
-    // Wire Quest Callbacks
+    // Wire Quest Manager Callbacks
+    this.questManager.onQuestComplete = (quest: GuildQuest) => {
+      this.controller.addScore(quest.rewardScore);
+      this.audioSynth.play('fanfare');
+      this.callbacks.onScoreChange?.(this.controller.getScore());
+      if (quest.rewardItemName && quest.rewardItemIcon) {
+        this.inventory.addItem({
+          id: `reward_${Date.now()}`,
+          name: quest.rewardItemName,
+          category: 'loot',
+          rarity: 'rare',
+          icon: quest.rewardItemIcon,
+          description: `Hadiah resmi dari Sayembara Serikat Tani: ${quest.title}`,
+          maxStack: 16
+        }, quest.rewardItemQty || 1);
+      }
+      this.callbacks.onActiveQuestChange?.(this.questManager.getActiveQuest());
+    };
+
+    // Wire Monster Quest Callbacks (legacy backward-compatibility)
     this.monsters.onQuestUpdate = (defeated, total) => {
       this.callbacks.onQuestUpdate?.(defeated, total);
     };
@@ -127,6 +163,7 @@ export class WorldEngine {
     this.scene.add(this.meadow.getRoot());
     this.scene.add(this.greenhouse.getRoot());
     this.scene.add(this.tavernInterior.getRoot());
+    this.scene.add(this.npcManager.getRoot());
     this.scene.add(this.collectibles.getRoot());
     this.scene.add(this.monsters.getRoot());
     this.scene.add(this.tomatoModel.getRoot());
@@ -385,6 +422,9 @@ export class WorldEngine {
         this.scene.background = new THREE.Color(0x87ceeb);
         this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
         this.controller.warpTo(38, 6.2, 40.0, -Math.PI * 0.75); // balcony deck
+        // Update survey quest if active
+        this.questManager.updateProgress('location', 1);
+        this.callbacks.onActiveQuestChange?.(this.questManager.getActiveQuest());
       } else {
         // Exiting back into meadow
         this.scene.background = new THREE.Color(0x87ceeb);
@@ -455,6 +495,99 @@ export class WorldEngine {
     this.collectibles.resetAll();
     this.callbacks.onScoreChange?.(this.controller.getScore());
     this.callbacks.onBounce?.(this.controller.getBounceCount());
+  }
+
+  // --- RPG Quest & NPC Interaction Public APIs ---
+
+  public getNearbyInteractable(): InteractableTarget | null {
+    return this.activeInteractable;
+  }
+
+  public hasNearbyInteractable(): boolean {
+    return this.activeInteractable !== null;
+  }
+
+  public triggerInteraction(): boolean {
+    if (!this.activeInteractable) return false;
+
+    if (this.activeInteractable.type === 'bounty_board') {
+      this.audioSynth.play('door_enter');
+      this.callbacks.onOpenQuestBoard?.(true);
+      return true;
+    }
+
+    if (this.activeInteractable.type === 'npc') {
+      const dialogue = this.npcManager.getInitialDialogue(this.activeInteractable.id);
+      if (dialogue) {
+        this.audioSynth.play('boing');
+        this.callbacks.onOpenDialogue?.(dialogue);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  public selectDialogueOption(option: DialogueOption): void {
+    if (option.action === 'open_bounty_board' || option.action === 'open_quest_board') {
+      this.callbacks.onOpenDialogue?.(null);
+      this.callbacks.onOpenQuestBoard?.(true);
+    } else {
+      const nextId = option.nextDialogueId || option.nextNodeId;
+      if (nextId) {
+        const next = this.npcManager.getDialogueNode(nextId);
+        this.callbacks.onOpenDialogue?.(next);
+      } else {
+        this.callbacks.onOpenDialogue?.(null);
+      }
+    }
+  }
+
+  public closeDialogue(): void {
+    this.callbacks.onOpenDialogue?.(null);
+  }
+
+  public closeQuestBoard(): void {
+    this.callbacks.onOpenQuestBoard?.(false);
+  }
+
+  public acceptQuest(id: string): boolean {
+    const res = this.questManager.acceptQuest(id);
+    if (res.success) {
+      this.audioSynth.play('collect');
+      this.callbacks.onActiveQuestChange?.(this.questManager.getActiveQuest());
+    }
+    return res.success;
+  }
+
+  public claimQuestReward(id: string): boolean {
+    const res = this.questManager.claimReward(id);
+    if (res.success) {
+      this.controller.addScore(res.score);
+      this.audioSynth.play('fanfare');
+      this.callbacks.onScoreChange?.(this.controller.getScore());
+      if (res.itemName && res.itemIcon) {
+        this.inventory.addItem({
+          id: `reward_${Date.now()}`,
+          name: res.itemName,
+          category: 'loot',
+          rarity: 'rare',
+          icon: res.itemIcon,
+          description: `Hadiah resmi penyelesaian Sayembara Serikat Tani.`,
+          maxStack: 16
+        }, res.itemQty || 1);
+      }
+      this.callbacks.onActiveQuestChange?.(this.questManager.getActiveQuest());
+    }
+    return res.success;
+  }
+
+  public getGuildQuests(): GuildQuest[] {
+    return this.questManager.getQuests();
+  }
+
+  public getActiveGuildQuest(): GuildQuest | null {
+    return this.questManager.getActiveQuest();
   }
 
   private tick = (): void => {
@@ -568,7 +701,9 @@ export class WorldEngine {
       this.controller.addScore(collected.points);
       this.audioSynth.play('collect');
       this.inventory.addGoldenDew();
+      this.questManager.updateProgress('collect', 1);
       this.callbacks.onScoreChange?.(this.controller.getScore());
+      this.callbacks.onActiveQuestChange?.(this.questManager.getActiveQuest());
     }
 
     // 5b. Update Pest Monsters & Dynamic Combat Detection
@@ -587,13 +722,23 @@ export class WorldEngine {
       this.callbacks.onScoreChange?.(this.controller.getScore());
       if (attackHit.defeated && attackHit.monsterType) {
         this.inventory.addMonsterLoot(attackHit.monsterType);
+        this.questManager.updateProgress('monster', 1);
+        this.callbacks.onActiveQuestChange?.(this.questManager.getActiveQuest());
       }
     }
 
-    // 6. Update Meadow Living Ecosystem, Animated Doors & Tavern Interior
+    // 6. Update Meadow Living Ecosystem, Animated Doors, Tavern Interior & NPCs
     this.meadow.update(deltaTime, elapsedTime);
     this.meadow.updateTavernDoor(deltaTime, state.position);
     this.tavernInterior.update(deltaTime, state.position);
+    this.npcManager.update(deltaTime, state.position);
+
+    // 6b. Check Proximity to Interactable NPCs or Bounty Board
+    const nearbyTarget = this.npcManager.checkInteractable(state.position);
+    if (nearbyTarget?.id !== this.activeInteractable?.id) {
+      this.activeInteractable = nearbyTarget;
+      this.callbacks.onInteractableChange?.(nearbyTarget);
+    }
 
     // 7. Update Camera Posture with adaptive distance
     this.updateCamera(state.position, state.heading, this.currentRoom);
@@ -665,6 +810,7 @@ export class WorldEngine {
     this.greenhouse.dispose();
     this.meadow.dispose();
     this.tavernInterior.dispose();
+    this.npcManager.dispose();
     this.collectibles.dispose();
     this.monsters.dispose();
     this.tomatoModel.dispose();

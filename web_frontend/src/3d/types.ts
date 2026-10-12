@@ -15,6 +15,58 @@ export interface WorldCallbacks {
   onRoomTransition?: (transition: RoomTransition) => void;
   onInventoryUpdate?: (items: InventoryItem[]) => void;
   onItemLooted?: (itemName: string, icon: string, qty: number) => void;
+  onInteractableChange?: (target: InteractableTarget | null) => void;
+  onOpenDialogue?: (node: DialogueNode | null) => void;
+  onOpenQuestBoard?: (open: boolean) => void;
+  onActiveQuestChange?: (quest: GuildQuest | null) => void;
+}
+
+export type QuestCategory = 'bounty' | 'gathering' | 'exploration' | 'monster' | 'collect';
+export type QuestStatus = 'available' | 'active' | 'completed' | 'claimed';
+
+export interface GuildQuest {
+  id: string;
+  title: string;
+  subtitle: string;
+  category: QuestCategory;
+  targetType: string;
+  targetCount: number;
+  currentCount: number;
+  currentProgress?: number;
+  rewardScore: number;
+  rewardItemName?: string;
+  rewardItemIcon?: string;
+  rewardItemQty?: number;
+  status: QuestStatus;
+  description: string;
+  icon: string;
+  difficulty?: number;
+}
+
+export interface DialogueOption {
+  text: string;
+  nextDialogueId?: string;
+  nextNodeId?: string;
+  action?: 'open_quest_board' | 'open_bounty_board' | 'close' | 'give_speed_buff' | 'cheer';
+}
+
+export interface DialogueNode {
+  id: string;
+  speaker: string;
+  speakerName?: string;
+  speakerTitle?: string;
+  speakerIcon: string;
+  speakerAvatar?: string;
+  text: string;
+  options: DialogueOption[];
+}
+
+export interface InteractableTarget {
+  id: string;
+  name: string;
+  promptText: string;
+  icon: string;
+  type: 'npc' | 'bounty_board';
 }
 
 export type RoomLocation = 'meadow' | 'greenhouse' | 'tavern' | 'windmill';
