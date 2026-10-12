@@ -31,7 +31,7 @@ export interface PhysicsState {
   isBoosting: boolean;
   bounceCount: number;
   score: number;
-  currentZone: 'greenhouse' | 'meadow';
+  currentZone: string;
 }
 
 export interface CollectibleItem {

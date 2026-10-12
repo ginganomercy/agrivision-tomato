@@ -44,23 +44,36 @@ export class CollectiblesManager {
     const sepalMat = new THREE.MeshStandardMaterial({ color: 0x38b000, roughness: 0.5 });
     this.disposables.push(goldMat, haloMat, sepalMat);
 
-    // Locations: 4 inside greenhouse, 8 across the meadow
+    // 22 Strategic reward locations distributed across all 5 thematic zones
     const spawnPoints: { x: number; z: number; y: number; points: number }[] = [
-      // Greenhouse Interior
-      { x: 0, z: -3.5, y: 0.8, points: 100 },
-      { x: -3.5, z: 0, y: 0.8, points: 100 },
-      { x: 3.5, z: 0, y: 0.8, points: 100 },
-      { x: 0, z: 4.5, y: 0.8, points: 150 }, // Near doorway
-      // Meadow Pathway & Surroundings
-      { x: 0.5, z: 12.0, y: 0.9, points: 200 },
-      { x: -0.8, z: 18.0, y: 0.9, points: 200 },
-      { x: 0.2, z: 25.0, y: 1.0, points: 250 },
-      // Meadow Bushes & Groves
-      { x: -10.0, z: 12.0, y: 0.8, points: 300 },
-      { x: 12.0, z: 14.0, y: 0.8, points: 300 },
-      { x: -14.0, z: 22.0, y: 0.9, points: 350 },
-      { x: 16.0, z: 24.0, y: 0.9, points: 350 },
-      { x: 0.0, z: 35.0, y: 1.1, points: 500 } // Deep meadow grand prize
+      // Zone 1: Ruang Laboratorium Greenhouse
+      { x: 0, z: -3.5, y: 0.95, points: 100 },
+      { x: -3.5, z: 0, y: 0.95, points: 100 },
+      { x: 3.5, z: 0, y: 0.95, points: 100 },
+      { x: 0, z: 4.5, y: 0.95, points: 150 },
+      // Zone 2: Kebun Tomat Komersial (Trellis Rows)
+      { x: 26.0, z: -25.0, y: 0.85, points: 200 },
+      { x: 35.0, z: -32.0, y: 0.85, points: 200 },
+      { x: 44.0, z: -28.0, y: 0.85, points: 250 },
+      { x: 35.0, z: -42.0, y: 0.85, points: 250 },
+      // Zone 3: Taman Bunga & Polinator Sanctuary
+      { x: -28.0, z: -28.0, y: 0.85, points: 200 },
+      { x: -38.0, z: -35.0, y: 0.85, points: 250 },
+      { x: -44.0, z: -42.0, y: 0.85, points: 250 },
+      { x: -30.0, z: -45.0, y: 0.85, points: 300 },
+      // Zone 4: Danau Irigasi Botani & Dermaga Kayu
+      { x: -35.0, z: 23.0, y: 0.85, points: 350 },
+      { x: -35.0, z: 27.0, y: 0.85, points: 500 }, // Ujung dermaga (Grand Diamond Dew)
+      { x: -22.0, z: 32.0, y: 0.85, points: 300 },
+      { x: -45.0, z: 42.0, y: 0.85, points: 350 },
+      // Zone 5: Bukit Kincir Angin & Kebun Buah
+      { x: 28.0, z: 28.0, y: 2.4, points: 300 },
+      { x: 36.0, z: 36.0, y: 4.8, points: 400 }, // Puncak bukit kincir
+      { x: 42.0, z: 44.0, y: 4.6, points: 500 }, // Dekat menara kincir
+      // Jalur Eksplorasi Antar Zona
+      { x: 14.0, z: 12.0, y: 0.85, points: 150 },
+      { x: -14.0, z: 10.0, y: 0.85, points: 150 },
+      { x: 0.0, z: 22.0, y: 0.85, points: 200 }
     ];
 
     spawnPoints.forEach((sp, idx) => {

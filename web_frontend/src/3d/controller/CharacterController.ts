@@ -1,18 +1,19 @@
 /**
- * CharacterController - Arcade Kinematics & Posture Controller
- * Implements smooth yaw heading, banking tilt, waddle squish & stretch,
- * jump bounce physics, and guarantees the stem stays oriented upright (never flips upside-down).
+ * CharacterController - Arcade Kinematics & Camera-Relative Movement Controller
+ * Implements intuitive camera-relative navigation (W=forward relative to view, S=backward, A/D=smooth strafe),
+ * smooth yaw heading, banking tilt, waddle squish & stretch, jump bounce physics,
+ * and guarantees the stem stays oriented upright (never flips upside-down).
  */
 import * as THREE from 'three';
 import type { InputState, PhysicsState } from '../types';
 
 export class CharacterController {
   // Spatial vectors
-  private position: THREE.Vector3 = new THREE.Vector3(0, 0.88, 0);
+  private position: THREE.Vector3 = new THREE.Vector3(0, 0.82, -1.0);
   private velocity: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
 
-  // Orientation angles (radians)
-  private heading: number = 0;       // Yaw (Y axis) - faces movement direction
+  // Orientation angles (radians) - 0 rad faces South (+Z) towards the greenhouse doorway
+  private heading: number = 0;
   private targetHeading: number = 0;
   private tiltPitch: number = 0;     // Subtle forward/backward lean (X axis)
   private tiltRoll: number = 0;      // Subtle banking roll (Z axis)
@@ -34,10 +35,12 @@ export class CharacterController {
   private static readonly FRICTION = 0.93; // Buttery smooth momentum
   private static readonly GRAVITY = -25.0;
   private static readonly JUMP_VELOCITY = 10.8;
-  private static readonly BOUNDARY_LIMIT = 41.0; // Meadow fence boundary
+  private static readonly BOUNDARY_LIMIT = 82.0; // 180m Open world perimeter boundary
 
-  constructor(initialPosition: THREE.Vector3 = new THREE.Vector3(0, 0.82, 0)) {
+  constructor(initialPosition: THREE.Vector3 = new THREE.Vector3(0, 0.82, -1.0)) {
     this.position.copy(initialPosition);
+    this.heading = 0;
+    this.targetHeading = 0;
   }
 
   public getPosition(): THREE.Vector3 {
@@ -89,7 +92,7 @@ export class CharacterController {
   }
 
   public resetPosition(): void {
-    this.position.set(0, 0.82, 0);
+    this.position.set(0, 0.82, -1.0);
     this.velocity.set(0, 0, 0);
     this.heading = 0;
     this.targetHeading = 0;
@@ -101,26 +104,28 @@ export class CharacterController {
   public update(
     deltaTime: number,
     input: InputState,
-    isInsideGreenhouse: boolean
+    isInsideGreenhouse: boolean,
+    camForward: THREE.Vector3,
+    camRight: THREE.Vector3
   ): { state: PhysicsState; justBounced: boolean; justLanded: boolean } {
     const clampedDt = Math.min(deltaTime, 0.1);
     let justBounced = false;
     let justLanded = false;
 
-    // 1. Process Horizontal Inputs
-    let moveX = 0;
-    let moveZ = 0;
+    // 1. Process Intuitive Camera-Relative Movement Direction
+    // W = moves forward along camera view direction
+    // S = moves backward along camera view direction
+    // D = smooth strafe right relative to camera view
+    // A = smooth strafe left relative to camera view
+    const moveDir = new THREE.Vector3(0, 0, 0);
 
-    if (input.forward) moveZ -= 1;
-    if (input.backward) moveZ += 1;
-    if (input.left) moveX -= 1;
-    if (input.right) moveX += 1;
+    if (input.forward) moveDir.add(camForward);
+    if (input.backward) moveDir.sub(camForward);
+    if (input.right) moveDir.add(camRight);
+    if (input.left) moveDir.sub(camRight);
 
-    // Normalize diagonal input
-    const inputMag = Math.hypot(moveX, moveZ);
-    if (inputMag > 0.001) {
-      moveX /= inputMag;
-      moveZ /= inputMag;
+    if (moveDir.lengthSq() > 0.001) {
+      moveDir.normalize();
     }
 
     // 2. Acceleration & Turbo
@@ -128,10 +133,10 @@ export class CharacterController {
     const accel = isBoosting ? CharacterController.TURBO_ACCELERATION : CharacterController.ACCELERATION;
     const maxSpd = isBoosting ? CharacterController.TURBO_MAX_SPEED : CharacterController.MAX_SPEED;
 
-    this.velocity.x += moveX * accel * clampedDt;
-    this.velocity.z += moveZ * accel * clampedDt;
+    this.velocity.x += moveDir.x * accel * clampedDt;
+    this.velocity.z += moveDir.z * accel * clampedDt;
 
-    // Ground friction
+    // Ground friction (buttery smooth gliding momentum)
     this.velocity.x *= Math.pow(CharacterController.FRICTION, clampedDt * 60);
     this.velocity.z *= Math.pow(CharacterController.FRICTION, clampedDt * 60);
 
@@ -155,8 +160,20 @@ export class CharacterController {
     this.velocity.y += CharacterController.GRAVITY * clampedDt;
     this.position.y += this.velocity.y * clampedDt;
 
-    // Ground Collision with dynamic elevation support (elevated greenhouse floor vs meadow)
-    const currentGroundY = isInsideGreenhouse ? 0.82 : 0.68;
+    // Topographic Ground Elevation Calculation
+    let currentGroundY = 0.68;
+    if (isInsideGreenhouse) {
+      currentGroundY = 0.82; // Elevated terracotta laboratory floor
+    } else {
+      // Windmill Hill elevation (mound at x=38, z=40, radius 20m)
+      const dxHill = (this.position.x - 38) / 20;
+      const dzHill = (this.position.z - 40) / 20;
+      const hillDistSq = dxHill * dxHill + dzHill * dzHill;
+      if (hillDistSq < 1.0) {
+        currentGroundY = 0.68 + (1.0 - Math.sqrt(hillDistSq)) * 4.4;
+      }
+    }
+
     if (this.position.y <= currentGroundY) {
       this.position.y = currentGroundY;
       if (!this.isGrounded) {
@@ -182,7 +199,7 @@ export class CharacterController {
     // 5. Environmental Collisions & Boundary Clamping
     this.handleCollisions(isInsideGreenhouse);
 
-    // 6. Upright Heading Yaw & Banking Tilt (NEVER INVERTS OR FLIPS UPSIDE DOWN)
+    // 6. Upright Heading Yaw & Banking Tilt (Faces actual movement vector)
     if (horizontalSpeed > 0.3) {
       this.targetHeading = Math.atan2(this.velocity.x, this.velocity.z);
       // Smooth interpolation for heading yaw
@@ -191,7 +208,7 @@ export class CharacterController {
       while (diff > Math.PI) diff -= Math.PI * 2;
       this.heading += diff * Math.min(1.0, clampedDt * 10.0);
 
-      // Banking lean into turns (max ~18 degrees = 0.31 rad)
+      // Banking lean into turns (max ~18 degrees)
       const targetRoll = (-diff * horizontalSpeed * 0.08);
       this.tiltRoll = THREE.MathUtils.clamp(targetRoll, -0.32, 0.32);
 
@@ -223,7 +240,7 @@ export class CharacterController {
       isBoosting,
       bounceCount: this.bounceCount,
       score: this.score,
-      currentZone: isInsideGreenhouse ? 'greenhouse' : 'meadow'
+      currentZone: this.getZoneName(isInsideGreenhouse)
     };
 
     return { state, justBounced, justLanded };
@@ -232,7 +249,7 @@ export class CharacterController {
   private handleCollisions(isInsideGreenhouse: boolean): void {
     const limit = CharacterController.BOUNDARY_LIMIT;
 
-    // Outer meadow boundary clamp
+    // Outer 180m perimeter boundary clamp
     if (this.position.x < -limit) { this.position.x = -limit; this.velocity.x *= -0.4; }
     if (this.position.x > limit) { this.position.x = limit; this.velocity.x *= -0.4; }
     if (this.position.z < -limit) { this.position.z = -limit; this.velocity.z *= -0.4; }
@@ -267,5 +284,26 @@ export class CharacterController {
         }
       }
     }
+
+    // Lake Shoreline Soft-Push Collision (Center x=-35, z=35, radius 19.5m)
+    // Allows standing on wooden observation pier at x in [-37, -33], z in [20, 29]
+    const distToLake = Math.hypot(this.position.x - (-35), this.position.z - 35);
+    const isOnPier = this.position.x >= -37.5 && this.position.x <= -32.5 && this.position.z >= 19.0 && this.position.z <= 29.5;
+    if (distToLake < 19.2 && !isOnPier) {
+      const angle = Math.atan2(this.position.z - 35, this.position.x - (-35));
+      this.position.x = -35 + Math.cos(angle) * 19.3;
+      this.position.z = 35 + Math.sin(angle) * 19.3;
+      this.velocity.x *= -0.3;
+      this.velocity.z *= -0.3;
+    }
+  }
+
+  public getZoneName(isInsideGreenhouse: boolean): string {
+    if (isInsideGreenhouse) return 'Ruang Laboratorium Botani';
+    if (this.position.x > 15 && this.position.z < -10) return 'Kebun Tomat Komersial (Trellis)';
+    if (this.position.x < -15 && this.position.z < -10) return 'Taman Bunga & Polinator';
+    if (this.position.x < -15 && this.position.z > 12) return 'Danau Irigasi Botani';
+    if (this.position.x > 15 && this.position.z > 15) return 'Bukit Kincir Angin & Kebun Buah';
+    return 'Hamparan Padang Rumput Hijau';
   }
 }

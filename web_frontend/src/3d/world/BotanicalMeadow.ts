@@ -1,25 +1,55 @@
 /**
- * BotanicalMeadow - Expansive Lush Natural Meadow Environment ("Hamparan Lapangan Hijau")
- * 90m x 90m terrain with garden pathway, perimeter hills, rustic wooden fence,
- * tomato shrubs, wildflowers, and drifting golden spore particles.
+ * BotanicalMeadow - Expansive Living Botanical Open-World (180m x 180m)
+ * Features 5 distinct agricultural & natural zones:
+ * 1. Central Laboratory & Greenhouse Pavilion
+ * 2. Commercial Heirloom Trellis Rows (East Orchard)
+ * 3. Wildflower Pollinator Meadow with Animated Butterflies (West Sanctuary)
+ * 4. Irrigation Reservoir Lake with Water Lilies & Wooden Dock (South-West)
+ * 5. Elevated Windmill Hill with Rotating Blades (South-East)
+ * Plus outer pine tree forest perimeter, drifting cumulus clouds, and golden pollen spores.
  */
 import * as THREE from 'three';
 
+interface Butterfly {
+  group: THREE.Group;
+  wingLeft: THREE.Mesh;
+  wingRight: THREE.Mesh;
+  baseX: number;
+  baseZ: number;
+  baseY: number;
+  radius: number;
+  speed: number;
+  phase: number;
+}
+
 export class BotanicalMeadow {
   private group: THREE.Group;
-  private particlePoints!: THREE.Points;
-  private particlePositions!: Float32Array;
   private disposables: (THREE.BufferGeometry | THREE.Material)[] = [];
 
-  public static readonly MEADOW_SIZE = 90; // 90x90 meters
-  private static readonly PARTICLE_COUNT = 120;
+  // Animated elements
+  private windmillBladesGroup: THREE.Group | null = null;
+  private butterflies: Butterfly[] = [];
+  private cloudsGroup: THREE.Group = new THREE.Group();
+  private particlePoints!: THREE.Points;
+  private particlePositions!: Float32Array;
+
+  // Spatial boundaries (meters)
+  public static readonly MEADOW_SIZE = 180; // 180x180m open world
+  public static readonly BOUNDARY_RADIUS = 84.0;
+  private static readonly PARTICLE_COUNT = 240;
 
   constructor() {
     this.group = new THREE.Group();
-    this.buildTerrain();
-    this.buildGardenPathway();
-    this.buildPerimeterFences();
-    this.buildTomatoBushesAndFlowers();
+
+    this.buildExpansiveTerrain();
+    this.buildIrrigationLake();
+    this.buildWindmillHill();
+    this.buildCommercialTrellisRows();
+    this.buildWildflowerPollinatorSanctuary();
+    this.buildGardenPathways();
+    this.buildPerimeterForest();
+    this.buildAnimatedButterflies();
+    this.buildSkyClouds();
     this.buildAtmosphericParticles();
   }
 
@@ -27,9 +57,11 @@ export class BotanicalMeadow {
     return this.group;
   }
 
-  private buildTerrain(): void {
-    // 90m terrain with gentle rolling perimeter hills
-    const segs = 48;
+  /**
+   * Constructs procedurally contoured 180m terrain with lake basin and windmill hill
+   */
+  private buildExpansiveTerrain(): void {
+    const segs = 64;
     const terrainGeo = new THREE.PlaneGeometry(BotanicalMeadow.MEADOW_SIZE, BotanicalMeadow.MEADOW_SIZE, segs, segs);
     terrainGeo.rotateX(-Math.PI / 2);
 
@@ -38,27 +70,52 @@ export class BotanicalMeadow {
       const x = pos.getX(i);
       const z = pos.getZ(i);
 
-      // Keep central area (inside and near greenhouse) flat
-      const distFromCenter = Math.sqrt(x * x + z * z);
-      if (distFromCenter > 18) {
-        // Rolling mounds towards outer boundary
-        const hill = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 1.4;
-        const outerRise = Math.pow(Math.max(0, distFromCenter - 25) / 20, 2) * 3.5;
-        pos.setY(i, hill + outerRise);
+      // Central greenhouse foundation depression to eliminate z-fighting with slab
+      if (Math.abs(x) < 10.5 && Math.abs(z) < 8.5) {
+        pos.setY(i, -0.06);
+        continue;
+      }
+
+      // South-West Irrigation Lake Basin excavation (x: -55 to -15, z: 15 to 55)
+      const dxLake = (x - (-35)) / 22;
+      const dzLake = (z - 35) / 22;
+      const lakeDistSq = dxLake * dxLake + dzLake * dzLake;
+      if (lakeDistSq < 1.0) {
+        // Smooth crater basin down to -0.65m
+        const lakeDepth = (1.0 - Math.sqrt(lakeDistSq)) * -0.65;
+        pos.setY(i, lakeDepth);
+        continue;
+      }
+
+      // South-East Windmill Hill mound elevation (x: 18 to 55, z: 20 to 60)
+      const dxHill = (x - 38) / 20;
+      const dzHill = (z - 40) / 20;
+      const hillDistSq = dxHill * dxHill + dzHill * dzHill;
+      if (hillDistSq < 1.0) {
+        // Smooth elevated hill up to +4.5m
+        const hillElevation = (1.0 - Math.sqrt(hillDistSq)) * 4.5;
+        pos.setY(i, hillElevation);
+        continue;
+      }
+
+      // Perimeter Mountain Ridge around map edge (r > 70m)
+      const distFromCenter = Math.hypot(x, z);
+      if (distFromCenter > 68) {
+        const outerRise = Math.pow((distFromCenter - 68) / 18, 2) * 6.5;
+        const wave = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 1.5;
+        pos.setY(i, outerRise + wave);
       } else {
-        // Depress terrain under greenhouse footprint to -0.06m to eliminate coplanar z-fighting
-        if (Math.abs(x) < 10.5 && Math.abs(z) < 8.5) {
-          pos.setY(i, -0.06);
-        } else {
-          pos.setY(i, 0);
-        }
+        // Gentle undulating agricultural terrain
+        const gentleRoll = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 0.35;
+        pos.setY(i, gentleRoll);
       }
     }
+
     terrainGeo.computeVertexNormals();
     this.disposables.push(terrainGeo);
 
     const grassMat = new THREE.MeshStandardMaterial({
-      color: 0x338f28, // Lush natural meadow green
+      color: 0x2e8524, // Rich natural agricultural green
       roughness: 0.85,
       metalness: 0.02
     });
@@ -69,160 +126,443 @@ export class BotanicalMeadow {
     this.group.add(terrainMesh);
   }
 
-  private buildGardenPathway(): void {
-    // Winding stone path leading south from the greenhouse portal (z = 7 to z = 28)
-    const pathCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.02, 7.0),
-      new THREE.Vector3(0.5, 0.02, 12.0),
-      new THREE.Vector3(-0.8, 0.02, 18.0),
-      new THREE.Vector3(0.2, 0.02, 25.0),
-      new THREE.Vector3(1.2, 0.02, 32.0)
-    ]);
+  /**
+   * Constructs South-West Irrigation Lake with water surface, lily pads, and wooden pier
+   */
+  private buildIrrigationLake(): void {
+    const lakeGroup = new THREE.Group();
+    lakeGroup.position.set(-35, 0, 35);
 
-    const pathPoints = pathCurve.getPoints(24);
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8a8479, roughness: 0.9 });
-    this.disposables.push(stoneMat);
+    // Reflective translucent water plane (y = -0.15)
+    const waterGeo = new THREE.CircleGeometry(20, 32);
+    waterGeo.rotateX(-Math.PI / 2);
+    this.disposables.push(waterGeo);
 
-    pathPoints.forEach((pt, idx) => {
-      const stoneGeo = new THREE.CylinderGeometry(0.7 + (idx % 3) * 0.15, 0.75, 0.04, 7);
-      this.disposables.push(stoneGeo);
-      const stone = new THREE.Mesh(stoneGeo, stoneMat);
-      stone.position.set(pt.x + ((idx % 2 === 0 ? 0.2 : -0.2)), 0.03, pt.z);
-      stone.rotation.y = (idx * 0.8);
-      stone.receiveShadow = true;
-      this.group.add(stone);
+    const waterMat = new THREE.MeshPhysicalMaterial({
+      color: 0x1d70b8,
+      roughness: 0.1,
+      metalness: 0.1,
+      transmission: 0.8,
+      ior: 1.33,
+      transparent: true,
+      opacity: 0.85
     });
-  }
+    this.disposables.push(waterMat);
 
-  private buildPerimeterFences(): void {
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.85 });
-    this.disposables.push(woodMat);
+    const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+    waterMesh.position.y = -0.15;
+    lakeGroup.add(waterMesh);
 
-    const halfSize = BotanicalMeadow.MEADOW_SIZE / 2 - 3;
-    const postGeo = new THREE.BoxGeometry(0.18, 1.4, 0.18);
-    const railGeo = new THREE.BoxGeometry(3.0, 0.1, 0.08);
-    this.disposables.push(postGeo, railGeo);
+    // Floating Lily Pads & Pink Lotus Flowers
+    const padMat = new THREE.MeshStandardMaterial({ color: 0x1c6b1a, roughness: 0.6 });
+    const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff66cc, roughness: 0.4 });
+    this.disposables.push(padMat, lotusMat);
 
-    // Fence segments around perimeter bounds
-    const createFenceLine = (startX: number, startZ: number, endX: number, endZ: number) => {
-      const dist = Math.hypot(endX - startX, endZ - startZ);
-      const steps = Math.floor(dist / 3.0);
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = startX + (endX - startX) * t;
-        const z = startZ + (endZ - startZ) * t;
-
-        const post = new THREE.Mesh(postGeo, woodMat);
-        post.position.set(x, 0.7, z);
-        post.castShadow = true;
-        this.group.add(post);
-
-        if (i < steps) {
-          const nextX = startX + (endX - startX) * ((i + 1) / steps);
-          const nextZ = startZ + (endZ - startZ) * ((i + 1) / steps);
-          const midX = (x + nextX) / 2;
-          const midZ = (z + nextZ) / 2;
-          const angle = Math.atan2(nextZ - z, nextX - x);
-
-          const railTop = new THREE.Mesh(railGeo, woodMat);
-          railTop.position.set(midX, 1.0, midZ);
-          railTop.rotation.y = -angle;
-          this.group.add(railTop);
-
-          const railBot = new THREE.Mesh(railGeo, woodMat);
-          railBot.position.set(midX, 0.5, midZ);
-          railBot.rotation.y = -angle;
-          this.group.add(railBot);
-        }
-      }
-    };
-
-    // Four boundaries
-    createFenceLine(-halfSize, -halfSize, halfSize, -halfSize);
-    createFenceLine(halfSize, -halfSize, halfSize, halfSize);
-    createFenceLine(halfSize, halfSize, -halfSize, halfSize);
-    createFenceLine(-halfSize, halfSize, -halfSize, -halfSize);
-  }
-
-  private buildTomatoBushesAndFlowers(): void {
-    const bushMat = new THREE.MeshStandardMaterial({ color: 0x1e6616, roughness: 0.8 });
-    const cherryMat = new THREE.MeshStandardMaterial({ color: 0xe61f1f, roughness: 0.3 });
-    const flowerMat = new THREE.MeshStandardMaterial({ color: 0xffe83b, roughness: 0.4 });
-    const daisyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-    this.disposables.push(bushMat, cherryMat, flowerMat, daisyMat);
-
-    // Tomato Bush clusters outside the greenhouse
-    const bushLocations = [
-      [-12, 10], [14, 12], [-16, 20], [18, 22],
-      [-8, 26], [9, 28], [-22, 5], [24, 7],
-      [-15, -12], [16, -14], [-4, 34], [6, 36]
+    const padPositions = [
+      [-6, 4], [8, -5], [-3, -8], [7, 7], [-10, -2], [4, 9]
     ];
 
-    bushLocations.forEach(([bx, bz]) => {
-      const bushGroup = new THREE.Group();
-      bushGroup.position.set(bx, 0, bz);
+    padPositions.forEach(([px, pz]) => {
+      const padGeo = new THREE.CircleGeometry(0.85, 12);
+      padGeo.rotateX(-Math.PI / 2);
+      this.disposables.push(padGeo);
 
-      // 3 spherical leaf clusters
-      [[-0.3, 0.5, 0], [0.3, 0.6, 0.2], [0, 0.8, -0.2]].forEach(([ox, oy, oz]) => {
-        const leafMesh = new THREE.Mesh(new THREE.SphereGeometry(0.65, 7, 6), bushMat);
-        leafMesh.position.set(ox, oy, oz);
-        leafMesh.castShadow = true;
-        bushGroup.add(leafMesh);
-      });
+      const pad = new THREE.Mesh(padGeo, padMat);
+      pad.position.set(px, -0.13, pz);
+      lakeGroup.add(pad);
 
-      // Hanging cherry tomatoes
-      [[-0.4, 0.4, 0.5], [0.3, 0.5, 0.6], [0.1, 0.3, -0.4]].forEach(([tx, ty, tz]) => {
-        const cherry = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), cherryMat);
-        cherry.position.set(tx, ty, tz);
-        bushGroup.add(cherry);
-      });
-
-      // Yellow blossoms
-      [[0.2, 0.9, 0.1], [-0.2, 0.8, 0.3]].forEach(([fx, fy, fz]) => {
-        const fl = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.05, 5), flowerMat);
-        fl.position.set(fx, fy, fz);
-        bushGroup.add(fl);
-      });
-
-      this.group.add(bushGroup);
+      // Pink lotus flower
+      const lotusGeo = new THREE.ConeGeometry(0.22, 0.35, 6);
+      this.disposables.push(lotusGeo);
+      const lotus = new THREE.Mesh(lotusGeo, lotusMat);
+      lotus.position.set(px, 0.05, pz);
+      lakeGroup.add(lotus);
     });
 
-    // Chamomile / Daisy wildflowers scattered randomly in grass
-    for (let i = 0; i < 45; i++) {
-      const angle = (i / 45) * Math.PI * 2;
-      const r = 12 + (i % 5) * 5.5;
-      const fx = Math.cos(angle) * r;
-      const fz = Math.sin(angle) * r;
+    // Wooden Observation Pier / Gazebo Dock extending into lake
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a3d28, roughness: 0.8 });
+    this.disposables.push(woodMat);
 
-      // Avoid inside greenhouse area
-      if (Math.abs(fx) < 10 && Math.abs(fz) < 8) continue;
+    // Deck planks (length 10m, width 3m)
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.15, 9.0), woodMat);
+    deck.position.set(0, 0.1, -14);
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    lakeGroup.add(deck);
 
-      const daisy = new THREE.Mesh(new THREE.CircleGeometry(0.12, 6), daisyMat);
-      daisy.rotation.x = -Math.PI / 2;
-      daisy.position.set(fx, 0.1, fz);
-      this.group.add(daisy);
+    // Pier support posts
+    [[-1.4, -17], [1.4, -17], [-1.4, -12], [1.4, -12], [-1.4, -10], [1.4, -10]].forEach(([postX, postZ]) => {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.4, 8), woodMat);
+      post.position.set(postX, -0.4, postZ);
+      post.castShadow = true;
+      lakeGroup.add(post);
+    });
+
+    this.group.add(lakeGroup);
+  }
+
+  /**
+   * Constructs South-East Windmill Hill with rotating sails
+   */
+  private buildWindmillHill(): void {
+    const hillGroup = new THREE.Group();
+    hillGroup.position.set(38, 4.4, 40);
+
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8c8275, roughness: 0.9 });
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a2e1b, roughness: 0.8 });
+    const sailMat = new THREE.MeshStandardMaterial({ color: 0xeee8d5, roughness: 0.6, side: THREE.DoubleSide });
+    this.disposables.push(stoneMat, woodMat, sailMat);
+
+    // Conical stone tower base (height 7.5m)
+    const towerGeo = new THREE.CylinderGeometry(1.8, 2.6, 7.5, 12);
+    this.disposables.push(towerGeo);
+    const tower = new THREE.Mesh(towerGeo, stoneMat);
+    tower.position.y = 3.75;
+    tower.castShadow = true;
+    tower.receiveShadow = true;
+    hillGroup.add(tower);
+
+    // Wooden dome / cap on top
+    const capGeo = new THREE.ConeGeometry(2.1, 2.4, 12);
+    this.disposables.push(capGeo);
+    const cap = new THREE.Mesh(capGeo, woodMat);
+    cap.position.y = 8.4;
+    cap.castShadow = true;
+    hillGroup.add(cap);
+
+    // Central rotor axle hub
+    this.windmillBladesGroup = new THREE.Group();
+    this.windmillBladesGroup.position.set(0, 7.6, 1.9);
+
+    const hubMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.5, 12), woodMat);
+    hubMesh.rotation.x = Math.PI / 2;
+    this.windmillBladesGroup.add(hubMesh);
+
+    // 4 Lattice Sails (blades)
+    const bladeArmGeo = new THREE.BoxGeometry(0.15, 6.4, 0.15);
+    const sailCanvasGeo = new THREE.PlaneGeometry(1.1, 2.6);
+    this.disposables.push(bladeArmGeo, sailCanvasGeo);
+
+    for (let b = 0; b < 4; b++) {
+      const angle = (b * Math.PI) / 2;
+      const bladeArm = new THREE.Group();
+      bladeArm.rotation.z = angle;
+
+      const spar = new THREE.Mesh(bladeArmGeo, woodMat);
+      spar.position.y = 3.2;
+      spar.castShadow = true;
+      bladeArm.add(spar);
+
+      const sailCloth = new THREE.Mesh(sailCanvasGeo, sailMat);
+      sailCloth.position.set(0.6, 3.8, 0.05);
+      sailCloth.castShadow = true;
+      bladeArm.add(sailCloth);
+
+      this.windmillBladesGroup.add(bladeArm);
+    }
+
+    hillGroup.add(this.windmillBladesGroup);
+    this.group.add(hillGroup);
+  }
+
+  /**
+   * Constructs Zone 2: Commercial Heirloom Trellis Rows (East Orchard)
+   */
+  private buildCommercialTrellisRows(): void {
+    const trellisGroup = new THREE.Group();
+    trellisGroup.position.set(35, 0, -32);
+
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x5a3e26, roughness: 0.85 });
+    const wireMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.8, roughness: 0.3 });
+    const vineMat = new THREE.MeshStandardMaterial({ color: 0x22781b, roughness: 0.7 });
+    const tomatoMat = new THREE.MeshStandardMaterial({ color: 0xe01c1c, roughness: 0.3 });
+    this.disposables.push(postMat, wireMat, vineMat, tomatoMat);
+
+    // 6 parallel raised crop rows
+    const rowSpacing = 4.2;
+    const rowLength = 32.0;
+
+    for (let r = -2; r <= 3; r++) {
+      const zOffset = r * rowSpacing;
+
+      // Wooden support posts at start, middle, and end
+      [-rowLength / 2, 0, rowLength / 2].forEach(x => {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.6, 0.16), postMat);
+        post.position.set(x, 1.3, zOffset);
+        post.castShadow = true;
+        trellisGroup.add(post);
+      });
+
+      // Horizontal trellis wire line
+      const wire = new THREE.Mesh(new THREE.BoxGeometry(rowLength, 0.03, 0.03), wireMat);
+      wire.position.set(0, 2.3, zOffset);
+      trellisGroup.add(wire);
+
+      // Lush climbing vines and hanging tomato clusters along the row
+      const vineSegments = 8;
+      for (let s = 0; s < vineSegments; s++) {
+        const xPos = -rowLength / 2 + (s + 0.5) * (rowLength / vineSegments);
+
+        // Foliage bundle
+        const vineCluster = new THREE.Mesh(new THREE.SphereGeometry(0.65, 6, 6), vineMat);
+        vineCluster.position.set(xPos, 1.4 + (s % 2) * 0.3, zOffset);
+        vineCluster.scale.set(0.8, 1.6, 0.8);
+        vineCluster.castShadow = true;
+        trellisGroup.add(vineCluster);
+
+        // Hanging tomato fruit clusters
+        [[-0.2, 0.8], [0.2, 1.0], [0, 0.6]].forEach(([dx, dy]) => {
+          const tomato = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 6), tomatoMat);
+          tomato.position.set(xPos + dx, dy, zOffset + 0.35);
+          trellisGroup.add(tomato);
+        });
+      }
+    }
+
+    this.group.add(trellisGroup);
+  }
+
+  /**
+   * Constructs Zone 3: Wildflower Pollinator Meadow with vibrant flower patches
+   */
+  private buildWildflowerPollinatorSanctuary(): void {
+    const sanctuaryGroup = new THREE.Group();
+    sanctuaryGroup.position.set(-35, 0, -35);
+
+    const lavenderMat = new THREE.MeshStandardMaterial({ color: 0x9370db, roughness: 0.6 });
+    const sunflowerMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
+    const daisyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+    this.disposables.push(lavenderMat, sunflowerMat, daisyMat);
+
+    // Lavender patches
+    for (let i = 0; i < 40; i++) {
+      const lx = (Math.random() - 0.5) * 34;
+      const lz = (Math.random() - 0.5) * 34;
+      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.75, 4), lavenderMat);
+      stalk.position.set(lx, 0.38, lz);
+      sanctuaryGroup.add(stalk);
+    }
+
+    // Tall Sunflowers
+    for (let j = 0; j < 18; j++) {
+      const sx = (Math.random() - 0.5) * 32;
+      const sz = (Math.random() - 0.5) * 32;
+
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.8, 5), lavenderMat);
+      stem.position.set(sx, 0.9, sz);
+      sanctuaryGroup.add(stem);
+
+      const flowerHead = new THREE.Mesh(new THREE.CircleGeometry(0.35, 8), sunflowerMat);
+      flowerHead.position.set(sx, 1.8, sz);
+      flowerHead.rotation.x = -0.4;
+      sanctuaryGroup.add(flowerHead);
+    }
+
+    this.group.add(sanctuaryGroup);
+  }
+
+  /**
+   * Constructs stone pathways connecting all 5 zones
+   */
+  private buildGardenPathways(): void {
+    const stoneMat = new THREE.MeshStandardMaterial({
+      color: 0x948b7d,
+      roughness: 0.88,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1
+    });
+    this.disposables.push(stoneMat);
+
+    const createPath = (points: THREE.Vector3[]) => {
+      const curve = new THREE.CatmullRomCurve3(points);
+      const curvePoints = curve.getPoints(32);
+
+      curvePoints.forEach((pt, idx) => {
+        const stone = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.75, 0.8, 0.04, 7),
+          stoneMat
+        );
+        stone.position.set(pt.x + (idx % 2 === 0 ? 0.2 : -0.2), 0.04, pt.z);
+        stone.rotation.y = idx * 0.7;
+        stone.receiveShadow = true;
+        this.group.add(stone);
+      });
+    };
+
+    // Path 1: Greenhouse to Trellis Rows (North-East)
+    createPath([
+      new THREE.Vector3(0, 0, 7.5),
+      new THREE.Vector3(12, 0, 0),
+      new THREE.Vector3(25, 0, -18),
+      new THREE.Vector3(35, 0, -30)
+    ]);
+
+    // Path 2: Greenhouse to Irrigation Lake (South-West)
+    createPath([
+      new THREE.Vector3(0, 0, 7.5),
+      new THREE.Vector3(-10, 0, 15),
+      new THREE.Vector3(-22, 0, 22),
+      new THREE.Vector3(-35, 0, 24)
+    ]);
+
+    // Path 3: Greenhouse to Windmill Hill (South-East)
+    createPath([
+      new THREE.Vector3(0, 0, 7.5),
+      new THREE.Vector3(14, 0, 18),
+      new THREE.Vector3(26, 1.5, 28),
+      new THREE.Vector3(36, 4.0, 36)
+    ]);
+  }
+
+  /**
+   * Constructs perimeter pine tree forest ring enclosing the 180m world
+   */
+  private buildPerimeterForest(): void {
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3221, roughness: 0.9 });
+    const pineMat = new THREE.MeshStandardMaterial({ color: 0x1b4d18, roughness: 0.75 });
+    this.disposables.push(trunkMat, pineMat);
+
+    const treeCount = 42;
+    const radius = 78.0;
+
+    for (let t = 0; t < treeCount; t++) {
+      const angle = (t / treeCount) * Math.PI * 2;
+      const tx = Math.cos(angle) * (radius + (t % 3) * 4);
+      const tz = Math.sin(angle) * (radius + (t % 3) * 4);
+
+      const treeGroup = new THREE.Group();
+      treeGroup.position.set(tx, 0, tz);
+
+      // Trunk
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 3.2, 7), trunkMat);
+      trunk.position.y = 1.6;
+      trunk.castShadow = true;
+      treeGroup.add(trunk);
+
+      // 3 Conical foliage tiers
+      [
+        { radius: 2.2, height: 3.2, y: 3.8 },
+        { radius: 1.7, height: 2.8, y: 5.6 },
+        { radius: 1.1, height: 2.2, y: 7.2 }
+      ].forEach(tier => {
+        const foliage = new THREE.Mesh(new THREE.ConeGeometry(tier.radius, tier.height, 7), pineMat);
+        foliage.position.y = tier.y;
+        foliage.castShadow = true;
+        treeGroup.add(foliage);
+      });
+
+      this.group.add(treeGroup);
     }
   }
 
+  /**
+   * Constructs 8 animated butterflies with dual flapping wings
+   */
+  private buildAnimatedButterflies(): void {
+    const wingMatMonarch = new THREE.MeshBasicMaterial({ color: 0xff6b35, side: THREE.DoubleSide });
+    const wingMatMorpho = new THREE.MeshBasicMaterial({ color: 0x00b4d8, side: THREE.DoubleSide });
+    this.disposables.push(wingMatMonarch, wingMatMorpho);
+
+    const wingGeo = new THREE.PlaneGeometry(0.22, 0.32);
+    wingGeo.translate(0.11, 0, 0); // pivot at wing hinge
+    this.disposables.push(wingGeo);
+
+    for (let b = 0; b < 8; b++) {
+      const bGroup = new THREE.Group();
+      const mat = b % 2 === 0 ? wingMatMonarch : wingMatMorpho;
+
+      const wingL = new THREE.Mesh(wingGeo, mat);
+      const wingR = new THREE.Mesh(wingGeo, mat);
+      wingR.rotation.y = Math.PI;
+
+      bGroup.add(wingL);
+      bGroup.add(wingR);
+
+      // Distribute in flower sanctuary and greenhouse entrance
+      const baseX = b < 5 ? -35 + (b - 2) * 6 : (b - 6) * 8;
+      const baseZ = b < 5 ? -35 + (b - 2) * 6 : 10 + (b - 6) * 4;
+      const baseY = 1.2 + (b % 3) * 0.4;
+
+      bGroup.position.set(baseX, baseY, baseZ);
+      this.group.add(bGroup);
+
+      this.butterflies.push({
+        group: bGroup,
+        wingLeft: wingL,
+        wingRight: wingR,
+        baseX,
+        baseZ,
+        baseY,
+        radius: 3.5 + (b % 3) * 1.5,
+        speed: 1.2 + (b % 4) * 0.3,
+        phase: b * 0.9
+      });
+    }
+  }
+
+  /**
+   * Constructs fluffy low-poly cumulus clouds drifting in the sky
+   */
+  private buildSkyClouds(): void {
+    const cloudMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.9,
+      transparent: true,
+      opacity: 0.85
+    });
+    this.disposables.push(cloudMat);
+
+    const cloudPuffs = 12;
+    for (let c = 0; c < cloudPuffs; c++) {
+      const cloud = new THREE.Group();
+      const cx = (Math.random() - 0.5) * 160;
+      const cy = 40 + Math.random() * 12;
+      const cz = (Math.random() - 0.5) * 160;
+
+      // 4-5 overlapping spheres per cloud
+      for (let s = 0; s < 5; s++) {
+        const puff = new THREE.Mesh(
+          new THREE.SphereGeometry(3.5 + Math.random() * 2.5, 6, 6),
+          cloudMat
+        );
+        puff.position.set(
+          (Math.random() - 0.5) * 6,
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 6
+        );
+        cloud.add(puff);
+      }
+
+      cloud.position.set(cx, cy, cz);
+      this.cloudsGroup.add(cloud);
+    }
+
+    this.group.add(this.cloudsGroup);
+  }
+
+  /**
+   * Constructs atmospheric golden spore particle field
+   */
   private buildAtmosphericParticles(): void {
     const geo = new THREE.BufferGeometry();
     const count = BotanicalMeadow.PARTICLE_COUNT;
     this.particlePositions = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
-      this.particlePositions[i * 3 + 0] = (Math.random() - 0.5) * 70;
-      this.particlePositions[i * 3 + 1] = 0.5 + Math.random() * 5.5;
-      this.particlePositions[i * 3 + 2] = (Math.random() - 0.5) * 70;
+      this.particlePositions[i * 3 + 0] = (Math.random() - 0.5) * 160;
+      this.particlePositions[i * 3 + 1] = 0.5 + Math.random() * 8.0;
+      this.particlePositions[i * 3 + 2] = (Math.random() - 0.5) * 160;
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(this.particlePositions, 3));
     this.disposables.push(geo);
 
     const mat = new THREE.PointsMaterial({
-      color: 0xfff4c2, // Golden dandelion fluff / pollen
-      size: 0.14,
+      color: 0xffe89e, // Shimmering golden pollen spores
+      size: 0.16,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.7,
       blending: THREE.AdditiveBlending
     });
     this.disposables.push(mat);
@@ -231,26 +571,56 @@ export class BotanicalMeadow {
     this.group.add(this.particlePoints);
   }
 
-  public updateParticles(deltaTime: number): void {
-    if (!this.particlePoints) return;
-    const pos = this.particlePositions;
-    const count = BotanicalMeadow.PARTICLE_COUNT;
-
-    for (let i = 0; i < count; i++) {
-      // Gentle drift along X and upward wave
-      pos[i * 3 + 0] += Math.sin(pos[i * 3 + 1] * 0.5) * 0.2 * deltaTime;
-      pos[i * 3 + 1] += Math.cos(pos[i * 3 + 0] * 0.5) * 0.15 * deltaTime;
-
-      // Wrap if drifted too high or low
-      if (pos[i * 3 + 1] > 6.0) pos[i * 3 + 1] = 0.5;
-      if (pos[i * 3 + 1] < 0.4) pos[i * 3 + 1] = 5.8;
+  /**
+   * Frame animation update for windmill, butterflies, clouds, and particles
+   */
+  public update(deltaTime: number, elapsedTime: number): void {
+    // 1. Rotate Windmill Sails
+    if (this.windmillBladesGroup) {
+      this.windmillBladesGroup.rotation.z += deltaTime * 0.9;
     }
 
-    this.particlePoints.geometry.attributes.position.needsUpdate = true;
+    // 2. Animate Butterflies (Flight path + rapid wing flaps)
+    this.butterflies.forEach(b => {
+      const flightTime = elapsedTime * b.speed + b.phase;
+      // Lissajous curve flight path
+      const curX = b.baseX + Math.sin(flightTime) * b.radius;
+      const curZ = b.baseZ + Math.cos(flightTime * 0.8) * b.radius;
+      const curY = b.baseY + Math.sin(flightTime * 2.0) * 0.6;
+
+      b.group.position.set(curX, curY, curZ);
+      b.group.rotation.y = Math.atan2(Math.cos(flightTime), -Math.sin(flightTime * 0.8));
+
+      // Flapping wings (rapid oscillation)
+      const flapAngle = Math.sin(elapsedTime * 24.0 + b.phase) * 0.85;
+      b.wingLeft.rotation.y = flapAngle;
+      b.wingRight.rotation.y = Math.PI - flapAngle;
+    });
+
+    // 3. Slowly drift clouds along X axis
+    this.cloudsGroup.children.forEach(cloud => {
+      cloud.position.x += deltaTime * 0.8;
+      if (cloud.position.x > 90) cloud.position.x = -90;
+    });
+
+    // 4. Update Spore Particles
+    if (this.particlePoints) {
+      const pos = this.particlePositions;
+      const count = BotanicalMeadow.PARTICLE_COUNT;
+      for (let i = 0; i < count; i++) {
+        pos[i * 3 + 0] += Math.sin(pos[i * 3 + 1] * 0.4) * 0.3 * deltaTime;
+        pos[i * 3 + 1] += Math.cos(pos[i * 3 + 0] * 0.4) * 0.2 * deltaTime;
+
+        if (pos[i * 3 + 1] > 8.0) pos[i * 3 + 1] = 0.5;
+        if (pos[i * 3 + 1] < 0.3) pos[i * 3 + 1] = 7.8;
+      }
+      this.particlePoints.geometry.attributes.position.needsUpdate = true;
+    }
   }
 
   public dispose(): void {
     this.disposables.forEach(d => d.dispose());
     this.disposables = [];
+    this.butterflies = [];
   }
 }

@@ -20,6 +20,7 @@ export class WorldEngine {
   private renderer: THREE.WebGLRenderer | null = null;
   private animationFrameId: number | null = null;
   private clock: THREE.Clock;
+  private sunLight!: THREE.DirectionalLight;
 
   // Subsystems
   private audioSynth: AudioSynth;
@@ -62,9 +63,10 @@ export class WorldEngine {
     this.scene.background = new THREE.Color(0x87ceeb); // Natural Sky Blue
     this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
 
-    // 2. Initialize Camera (near = 0.6 eliminates depth-buffer precision compression & z-fighting)
+    // 2. Initialize Camera (spacious view looking forward South through greenhouse doorway)
     this.camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.6, 200);
-    this.camera.position.set(0, 4.5, 9.0);
+    this.camera.position.set(0, 3.8, -8.0);
+    this.camera.lookAt(new THREE.Vector3(0, 1.0, 0));
 
     // 3. Initialize Audio
     this.audioSynth = new AudioSynth(options.enableAudio);
@@ -94,22 +96,23 @@ export class WorldEngine {
     hemiLight.position.set(0, 40, 0);
     this.scene.add(hemiLight);
 
-    // Sun Directional Light with Soft Shadows
-    const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.4);
-    sunLight.position.set(22, 38, 18);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.near = 0.5;
-    sunLight.shadow.camera.far = 120;
-    const shadowD = 28;
-    sunLight.shadow.camera.left = -shadowD;
-    sunLight.shadow.camera.right = shadowD;
-    sunLight.shadow.camera.top = shadowD;
-    sunLight.shadow.camera.bottom = -shadowD;
-    sunLight.shadow.bias = -0.0001;
-    sunLight.shadow.normalBias = 0.02;
-    this.scene.add(sunLight);
+    // Sun Directional Light with Dynamic Player-Centric Shadow Frustum
+    this.sunLight = new THREE.DirectionalLight(0xfff5e6, 1.4);
+    this.sunLight.position.set(22, 45, 18);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.width = 2048;
+    this.sunLight.shadow.mapSize.height = 2048;
+    this.sunLight.shadow.camera.near = 0.5;
+    this.sunLight.shadow.camera.far = 130;
+    const shadowD = 32;
+    this.sunLight.shadow.camera.left = -shadowD;
+    this.sunLight.shadow.camera.right = shadowD;
+    this.sunLight.shadow.camera.top = shadowD;
+    this.sunLight.shadow.camera.bottom = -shadowD;
+    this.sunLight.shadow.bias = -0.0001;
+    this.sunLight.shadow.normalBias = 0.02;
+    this.scene.add(this.sunLight);
+    this.scene.add(this.sunLight.target);
 
     // Ambient fill
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
@@ -244,10 +247,22 @@ export class WorldEngine {
       this.controller.getPosition().z
     );
 
+    // Camera-relative forward & right horizontal vectors for natural intuitive controls
+    const camForward = new THREE.Vector3();
+    this.camera.getWorldDirection(camForward);
+    camForward.y = 0;
+    if (camForward.lengthSq() < 0.001) camForward.set(0, 0, 1);
+    camForward.normalize();
+
+    const camRight = new THREE.Vector3();
+    camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
+
     const { state, justBounced } = this.controller.update(
       deltaTime,
       this.inputState,
-      isInside
+      isInside,
+      camForward,
+      camRight
     );
 
     if (justBounced) {
@@ -255,8 +270,13 @@ export class WorldEngine {
       this.callbacks.onBounce?.(this.controller.getBounceCount());
     }
 
-    // 2. Zone Name Detection Callback
-    const zoneName = isInside ? 'Ruang Laboratorium Botani' : 'Hamparan Padang Rumput Hijau';
+    // 1b. Dynamic Player-Centric Shadow Tracking (Shadows follow player everywhere across 180m)
+    this.sunLight.position.set(state.position.x + 32, 45, state.position.z + 22);
+    this.sunLight.target.position.copy(state.position);
+    this.sunLight.target.updateMatrixWorld();
+
+    // 2. Dynamic 5-Zone Name Detection Callback
+    const zoneName = this.controller.getZoneName(isInside);
     if (zoneName !== this.currentZoneName) {
       this.currentZoneName = zoneName;
       this.callbacks.onZoneChange?.(zoneName);
@@ -298,11 +318,11 @@ export class WorldEngine {
       this.callbacks.onScoreChange?.(this.controller.getScore());
     }
 
-    // 6. Update Meadow Particles
-    this.meadow.updateParticles(deltaTime);
+    // 6. Update Meadow Living Ecosystem (Windmill, butterflies, clouds, spores)
+    this.meadow.update(deltaTime, elapsedTime);
 
-    // 7. Update Camera Posture
-    this.updateCamera(state.position, state.heading);
+    // 7. Update Camera Posture with adaptive distance
+    this.updateCamera(state.position, state.heading, isInside);
 
     // 8. Render Frame
     if (this.renderer) {
@@ -310,11 +330,11 @@ export class WorldEngine {
     }
   };
 
-  private updateCamera(targetPos: THREE.Vector3, targetHeading: number): void {
+  private updateCamera(targetPos: THREE.Vector3, targetHeading: number, isInside: boolean): void {
     if (this.cameraMode === 'chase') {
-      // Spacious, comfortable Third-Person Chase Camera (beloved wide perspective)
-      const camDist = 8.2;
-      const camHeight = 3.6;
+      // Adaptive Chase Camera (6.4m in greenhouse, 8.6m in wide open world)
+      const camDist = isInside ? 6.4 : 8.6;
+      const camHeight = isInside ? 3.0 : 3.8;
       const behindX = targetPos.x - Math.sin(targetHeading) * camDist;
       const behindZ = targetPos.z - Math.cos(targetHeading) * camDist;
 
