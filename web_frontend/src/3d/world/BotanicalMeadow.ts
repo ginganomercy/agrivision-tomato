@@ -138,13 +138,38 @@ export class BotanicalMeadow {
       if (z > 25.5 && z <= 26.8 && Math.abs(x - (-14)) <= 2.2) return 0.28; // Porch Step
     }
 
-    // 3. Lake Observation Pier Deck & Shore Ramp (Center: x=-35)
-    // Dock extends into lake: x in [-36.8, -33.2], z in [14.0, 29.0]
-    if (Math.abs(x - (-35)) <= 1.9 && z >= 14.0 && z <= 29.0) {
-      if (z >= 18.5) return 0.18; // Flat wooden pier deck
-      // Sloped Shore Ramp: slopes from 0.08 at z=14.0 to 0.18 at z=18.5
-      const rampProgress = (z - 14.0) / 4.5;
-      return 0.08 + rampProgress * 0.10;
+    // 3. Grand Botanical Lake Arch Bridge & Central Lotus Gazebo (Center: x=-35, z=35)
+    // Full span extends from North shore (z=13.5) across Central Gazebo (z=35) to South shore (z=56.5)
+    const distToLakeCenter = Math.hypot(x - (-35), z - 35);
+    // Central Lotus Gazebo Island (radius <= 4.5m)
+    if (distToLakeCenter <= 4.5) {
+      return 0.45; // Solid wooden gazebo deck
+    }
+
+    // Bridge Walkway Spans: Width 3.8m (Math.abs(x - (-35)) <= 2.05)
+    if (Math.abs(x - (-35)) <= 2.05 && z >= 13.5 && z <= 56.5) {
+      // North Shore Approach Ramp (z: 13.5 to 17.0)
+      if (z < 17.0) {
+        const rampNorm = (z - 13.5) / 3.5;
+        return 0.08 + rampNorm * 0.20;
+      }
+      // North Arched Bridge Span (z: 17.0 to 30.5)
+      if (z <= 30.5) {
+        const u = (z - 17.0) / 13.5;
+        return 0.28 + (0.45 - 0.28) * u + Math.sin(u * Math.PI) * 0.22;
+      }
+      // South Arched Bridge Span (z: 39.5 to 53.0)
+      if (z >= 39.5 && z <= 53.0) {
+        const v = (z - 39.5) / 13.5;
+        return 0.45 - (0.45 - 0.28) * v + Math.sin(v * Math.PI) * 0.22;
+      }
+      // South Shore Approach Ramp (z: 53.0 to 56.5)
+      if (z > 53.0) {
+        const w = (z - 53.0) / 3.5;
+        return 0.28 - w * 0.20;
+      }
+      // Central bridge connection to gazebo
+      return 0.45;
     }
 
     // Default to natural procedural terrain elevation
@@ -182,13 +207,20 @@ export class BotanicalMeadow {
   }
 
   /**
-   * Constructs South-West Irrigation Lake with water surface, lily pads, and wooden pier
+   * Constructs South-West Irrigation Lake with water surface, blooming lotus pads,
+   * Grand Full-Span Botanical Arch Bridge, and Central Lotus Gazebo Pavilion.
+   * Features:
+   * 1. 40m circular reflective irrigation lake basin with floating lily pads and pink lotuses.
+   * 2. Full-span arched wooden footbridge spanning from North shore (z=14) across to South shore (z=56).
+   * 3. Central Lotus Gazebo Pavilion (8-pillared octagonal gazebo with conical cedar roof, spire finial, hanging lantern & benches).
+   * 4. Heavy timber side handrails with vertical balusters and warm entrance lantern posts.
+   * 5. Solid underwater stone plinths and timber pilings anchored into lake bed (0% floating).
    */
   private buildIrrigationLake(): void {
     const lakeGroup = new THREE.Group();
     lakeGroup.position.set(-35, 0, 35);
 
-    // Reflective translucent water plane (y = -0.15)
+    // 1. Reflective translucent water plane (y = -0.15)
     const waterGeo = new THREE.CircleGeometry(20, 32);
     waterGeo.rotateX(-Math.PI / 2);
     this.disposables.push(waterGeo);
@@ -206,17 +238,19 @@ export class BotanicalMeadow {
     waterMesh.position.y = -0.15;
     lakeGroup.add(waterMesh);
 
-    // Floating Lily Pads & Pink Lotus Flowers
+    // 2. Floating Lily Pads & Pink Lotus Flowers around the lake
     const padMat = new THREE.MeshStandardMaterial({ color: 0x1c6b1a, roughness: 0.6 });
     const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff66cc, roughness: 0.4 });
     this.disposables.push(padMat, lotusMat);
 
     const padPositions = [
-      [-6, 4], [8, -5], [-3, -8], [7, 7], [-10, -2], [4, 9]
+      [-7, -10], [9, -11], [-11, -3], [12, -4],
+      [-9, 8], [11, 7], [-8, 14], [8, 13],
+      [-13, 2], [14, 1], [-5, -15], [6, 16]
     ];
 
     padPositions.forEach(([px, pz]) => {
-      const padGeo = new THREE.CircleGeometry(0.85, 12);
+      const padGeo = new THREE.CircleGeometry(0.9, 12);
       padGeo.rotateX(-Math.PI / 2);
       this.disposables.push(padGeo);
 
@@ -224,39 +258,206 @@ export class BotanicalMeadow {
       pad.position.set(px, -0.13, pz);
       lakeGroup.add(pad);
 
-      // Pink lotus flower
-      const lotusGeo = new THREE.ConeGeometry(0.22, 0.35, 6);
+      const lotusGeo = new THREE.ConeGeometry(0.24, 0.38, 6);
       this.disposables.push(lotusGeo);
       const lotus = new THREE.Mesh(lotusGeo, lotusMat);
-      lotus.position.set(px, 0.05, pz);
+      lotus.position.set(px, 0.06, pz);
       lakeGroup.add(lotus);
     });
 
-    // Wooden Observation Pier / Gazebo Dock extending into lake
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a3d28, roughness: 0.8 });
-    this.disposables.push(woodMat);
-
-    // Deck planks (length 9m, width 3.2m, centered at z = -14)
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.15, 9.0), woodMat);
-    deck.position.set(0, 0.1, -14);
-    deck.castShadow = true;
-    deck.receiveShadow = true;
-    lakeGroup.add(deck);
-
-    // Wooden Shoreline Access Ramp connecting dry terrain to pier deck
-    const ramp = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.12, 3.6), woodMat);
-    ramp.position.set(0, 0.08, -19.5); // World pos: (-35, 0.08, 15.5)
-    ramp.castShadow = true;
-    ramp.receiveShadow = true;
-    lakeGroup.add(ramp);
-
-    // Pier support posts
-    [[-1.4, -17], [1.4, -17], [-1.4, -12], [1.4, -12], [-1.4, -10], [1.4, -10]].forEach(([postX, postZ]) => {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.4, 8), woodMat);
-      post.position.set(postX, -0.4, postZ);
-      post.castShadow = true;
-      lakeGroup.add(post);
+    // 3. Shared Architectural Materials
+    const timberDarkMat = new THREE.MeshStandardMaterial({ color: 0x482d1c, roughness: 0.85 });
+    const woodDeckMat = new THREE.MeshStandardMaterial({ color: 0x5a3d28, roughness: 0.78 });
+    const stonePlinthMat = new THREE.MeshStandardMaterial({ color: 0x54524e, roughness: 0.9 });
+    const cedarRoofMat = new THREE.MeshStandardMaterial({ color: 0x7a3a22, roughness: 0.75 });
+    const brassMat = new THREE.MeshStandardMaterial({ color: 0xb58900, metalness: 0.8, roughness: 0.3 });
+    const lanternGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xffaa00,
+      emissiveIntensity: 0.9,
+      roughness: 0.2
     });
+    this.disposables.push(timberDarkMat, woodDeckMat, stonePlinthMat, cedarRoofMat, brassMat, lanternGlowMat);
+
+    // 4. Central Lotus Gazebo Island (at center x=0, z=0)
+    // Deep underwater stone foundation plinth (y=-0.7 to y=0.35)
+    const plinthGeo = new THREE.CylinderGeometry(4.6, 4.9, 1.1, 8);
+    this.disposables.push(plinthGeo);
+    const plinth = new THREE.Mesh(plinthGeo, stonePlinthMat);
+    plinth.position.y = -0.15;
+    plinth.receiveShadow = true;
+    lakeGroup.add(plinth);
+
+    // Octagonal wooden gazebo floor deck (y=0.45)
+    const gazeboDeckGeo = new THREE.CylinderGeometry(4.4, 4.4, 0.18, 8);
+    this.disposables.push(gazeboDeckGeo);
+    const gazeboDeck = new THREE.Mesh(gazeboDeckGeo, woodDeckMat);
+    gazeboDeck.position.y = 0.45;
+    gazeboDeck.receiveShadow = true;
+    lakeGroup.add(gazeboDeck);
+
+    // 8 Carved Wooden Columns supporting roof
+    const columnGeo = new THREE.BoxGeometry(0.24, 3.0, 0.24);
+    this.disposables.push(columnGeo);
+    for (let c = 0; c < 8; c++) {
+      const colAngle = (c * Math.PI) / 4;
+      const colX = Math.cos(colAngle) * 3.85;
+      const colZ = Math.sin(colAngle) * 3.85;
+
+      const column = new THREE.Mesh(columnGeo, timberDarkMat);
+      column.position.set(colX, 1.95, colZ);
+      column.castShadow = true;
+      lakeGroup.add(column);
+    }
+
+    // Gazebo Octagonal Conical Cedar Roof
+    const roofGeo = new THREE.ConeGeometry(5.1, 2.5, 8);
+    this.disposables.push(roofGeo);
+    const roof = new THREE.Mesh(roofGeo, cedarRoofMat);
+    roof.position.y = 4.65;
+    roof.castShadow = true;
+    lakeGroup.add(roof);
+
+    // Roof Spire Finial
+    const finialGeo = new THREE.ConeGeometry(0.18, 0.9, 6);
+    this.disposables.push(finialGeo);
+    const finial = new THREE.Mesh(finialGeo, brassMat);
+    finial.position.y = 6.35;
+    lakeGroup.add(finial);
+
+    // Central Brass Hanging Chandelier Lantern
+    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.8, 4), brassMat);
+    chain.position.set(0, 3.6, 0);
+    lakeGroup.add(chain);
+
+    const chandelier = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.55, 0.42), lanternGlowMat);
+    chandelier.position.set(0, 3.0, 0);
+    lakeGroup.add(chandelier);
+
+    // Gazebo Observation Benches (East & West sides facing lotus flowers)
+    [-2.7, 2.7].forEach(bx => {
+      const benchSeat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 2.4), woodDeckMat);
+      benchSeat.position.set(bx, 0.82, 0);
+      benchSeat.castShadow = true;
+      lakeGroup.add(benchSeat);
+
+      const benchBack = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 2.4), woodDeckMat);
+      benchBack.position.set(bx > 0 ? bx + 0.22 : bx - 0.22, 1.05, 0);
+      lakeGroup.add(benchBack);
+    });
+
+    // Perimeter Railing on Gazebo with North & South bridge access portals
+    for (let r = 0; r < 8; r++) {
+      // Skip North (r=6 -> angle 3PI/2) and South (r=2 -> angle PI/2) openings
+      if (r === 2 || r === 6) continue;
+      const midAngle = (r + 0.5) * (Math.PI / 4);
+      const rx = Math.cos(midAngle) * 3.85;
+      const rz = Math.sin(midAngle) * 3.85;
+
+      const railSegment = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.1, 0.12), timberDarkMat);
+      railSegment.position.set(rx, 1.25, rz);
+      railSegment.rotation.y = -midAngle + Math.PI / 2;
+      railSegment.castShadow = true;
+      lakeGroup.add(railSegment);
+    }
+
+    // 5. Arched Wooden Bridge Spans (North: z=-18 to -4.5, South: z=+4.5 to +18)
+    const createBridgeSpan = (isNorth: boolean) => {
+      const zStart = isNorth ? -18.0 : 4.5;
+      const spanLength = 13.5;
+      const segments = 7;
+      const segLength = spanLength / segments;
+
+      // Segmented Arched Walkway Deck
+      for (let s = 0; s < segments; s++) {
+        const segZ = zStart + (s + 0.5) * segLength;
+        const norm = isNorth ? (segZ - (-18.0)) / spanLength : (segZ - 4.5) / spanLength;
+        const baseSlope = isNorth ? 0.28 + (0.45 - 0.28) * norm : 0.45 - (0.45 - 0.28) * norm;
+        const archY = baseSlope + Math.sin(norm * Math.PI) * 0.22;
+
+        const deckSeg = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.16, segLength + 0.1), woodDeckMat);
+        deckSeg.position.set(0, archY, segZ);
+        deckSeg.castShadow = true;
+        deckSeg.receiveShadow = true;
+        lakeGroup.add(deckSeg);
+      }
+
+      // Continuous Safety Handrails (West: x=-1.75, East: x=+1.75)
+      [-1.75, 1.75].forEach(rx => {
+        // Continuous top rail
+        const railZ = isNorth ? -11.25 : 11.25;
+        const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, spanLength), timberDarkMat);
+        topRail.position.set(rx, 1.28, railZ);
+        topRail.castShadow = true;
+        lakeGroup.add(topRail);
+
+        const midRail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, spanLength), timberDarkMat);
+        midRail.position.set(rx, 0.88, railZ);
+        midRail.castShadow = true;
+        lakeGroup.add(midRail);
+
+        // Vertical Balusters spaced every 2.25m
+        for (let b = 0; b <= 6; b++) {
+          const bz = zStart + b * 2.25;
+          const bNorm = isNorth ? (bz - (-18.0)) / spanLength : (bz - 4.5) / spanLength;
+          const bBase = isNorth ? 0.28 + (0.45 - 0.28) * bNorm : 0.45 - (0.45 - 0.28) * bNorm;
+          const bArchY = bBase + Math.sin(bNorm * Math.PI) * 0.22;
+
+          const baluster = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 0.12), timberDarkMat);
+          baluster.position.set(rx, bArchY + 0.55, bz);
+          baluster.castShadow = true;
+          lakeGroup.add(baluster);
+        }
+      });
+
+      // Submerged Timber Pilings into Lake Bed
+      [-9.0, -15.0].forEach(pzRel => {
+        const pz = isNorth ? pzRel : -pzRel;
+        [-1.6, 1.6].forEach(px => {
+          const piling = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 1.8, 8), timberDarkMat);
+          piling.position.set(px, -0.4, pz);
+          piling.castShadow = true;
+          lakeGroup.add(piling);
+        });
+
+        // Horizontal cross tie
+        const crossTie = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.14, 0.18), timberDarkMat);
+        crossTie.position.set(0, 0.1, pz);
+        lakeGroup.add(crossTie);
+      });
+
+      // Entrance Brass Lanterns on corner posts
+      const entranceZ = isNorth ? -18.0 : 18.0;
+      [-1.75, 1.75].forEach(lx => {
+        const lanternPost = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.4, 0.16), timberDarkMat);
+        lanternPost.position.set(lx, 0.98, entranceZ);
+        lakeGroup.add(lanternPost);
+
+        const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.36, 0.22), lanternGlowMat);
+        lantern.position.set(lx, 1.78, entranceZ);
+        lakeGroup.add(lantern);
+      });
+    };
+
+    createBridgeSpan(true);  // North Span
+    createBridgeSpan(false); // South Span
+
+    // 6. Shoreline Approach Ramps (North: z=-21.5 to -18.0, South: z=+18.0 to +21.5)
+    // North Approach Ramp (Slopes from 0.08m at shore z=-21.5 to 0.28m at bridge start z=-18.0)
+    const northRamp = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.16, 3.6), woodDeckMat);
+    northRamp.position.set(0, 0.18, -19.75);
+    northRamp.rotation.x = -0.057; // Smooth slope up to bridge deck
+    northRamp.castShadow = true;
+    northRamp.receiveShadow = true;
+    lakeGroup.add(northRamp);
+
+    // South Approach Ramp (Slopes from 0.28m at bridge end z=+18.0 to 0.08m at shore z=+21.5)
+    const southRamp = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.16, 3.6), woodDeckMat);
+    southRamp.position.set(0, 0.18, 19.75);
+    southRamp.rotation.x = 0.057; // Smooth slope down to shore
+    southRamp.castShadow = true;
+    southRamp.receiveShadow = true;
+    lakeGroup.add(southRamp);
 
     this.group.add(lakeGroup);
   }
@@ -904,7 +1105,7 @@ export class BotanicalMeadow {
 
         // Invariant: Do not place stone inside lake water (lake center: (-35, 35), radius: 20m)
         const distToLake = Math.hypot(posX - (-35), posZ - 35);
-        if (distToLake < 20.2 && !(Math.abs(posX - (-35)) < 1.8 && posZ <= 15.2)) {
+        if (distToLake < 20.2 && !(Math.abs(posX - (-35)) < 2.0 && (posZ <= 15.2 || posZ >= 55.5))) {
           return;
         }
 
@@ -925,8 +1126,8 @@ export class BotanicalMeadow {
       new THREE.Vector3(35, 0, -28)
     ], 32);
 
-    // Path 2: Greenhouse to Irrigation Lake Dock Ramp (South-West)
-    // Seamlessly connects to the wooden shore ramp at (-35, 14.2) without entering water!
+    // Path 2: Greenhouse to Irrigation Lake Bridge Ramp (South-West)
+    // Seamlessly connects to the wooden bridge ramp at (-35, 14.2)
     createPath([
       new THREE.Vector3(0, 0, 7.5),
       new THREE.Vector3(-10, 0, 9.5),
@@ -960,6 +1161,14 @@ export class BotanicalMeadow {
       new THREE.Vector3(-13, 0, 38.0),
       new THREE.Vector3(-17, 0, 49.0)
     ], 36);
+
+    // Path 6: South Lake Bridge Exit to Southern Scenic Hills
+    createPath([
+      new THREE.Vector3(-35, 0, 56.5),
+      new THREE.Vector3(-28, 0, 61.0),
+      new THREE.Vector3(-16, 0, 64.0),
+      new THREE.Vector3(0, 0, 62.0)
+    ], 28);
   }
 
   /**

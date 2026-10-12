@@ -67,9 +67,10 @@ export class CollectiblesManager {
       { x: -38.0, z: -35.0, y: 0.85, points: 250 },
       { x: -44.0, z: -42.0, y: 0.85, points: 250 },
       { x: -30.0, z: -45.0, y: 0.85, points: 300 },
-      // Zone 4: Danau Irigasi Botani & Dermaga Kayu
-      { x: -35.0, z: 23.0, y: 0.85, points: 350 },
-      { x: -35.0, z: 27.0, y: 0.85, points: 500 }, // Ujung dermaga (Grand Diamond Dew)
+      // Zone 4: Danau Irigasi Botani, Jembatan Lengkung & Paviliun Teratai
+      { x: -35.0, z: 23.5, y: 1.35, points: 350 }, // Puncak jembatan lengkung utara
+      { x: -35.0, z: 35.0, y: 1.25, points: 500 }, // Pusat Paviliun Gazebo Teratai (Grand Diamond Dew)
+      { x: -35.0, z: 46.5, y: 1.35, points: 350 }, // Puncak jembatan lengkung selatan
       { x: -22.0, z: 32.0, y: 0.85, points: 300 },
       { x: -45.0, z: 42.0, y: 0.85, points: 350 },
       // Zone 5: Bukit Kincir Angin & Kebun Buah

@@ -301,14 +301,42 @@ export class CharacterController {
       }
     }
 
-    // 2. Lake Shoreline Soft-Push Collision (Center x=-35, z=35, radius 19.5m)
-    // Allows standing on wooden observation pier at x in [-37, -33], z in [14, 29.5]
+    // 2. Lake Shoreline & Grand Botanical Bridge (Center x=-35, z=35, lake radius 20m)
+    // Allows full-span crossing along Grand Botanical Arch Bridge & Central Lotus Gazebo (z: 13.2 to 56.8)
     const distToLake = Math.hypot(this.position.x - (-35), this.position.z - 35);
-    const isOnPier = this.position.x >= -37.2 && this.position.x <= -32.8 && this.position.z >= 13.5 && this.position.z <= 29.5;
-    if (distToLake < 19.2 && !isOnPier) {
+    const isOnGazebo = distToLake <= 4.45;
+    const isOnBridgeSpan = Math.abs(this.position.x - (-35)) <= 2.05 && this.position.z >= 13.2 && this.position.z <= 56.8;
+    const isOnBridge = isOnGazebo || isOnBridgeSpan;
+
+    if (isOnBridge) {
+      // Lateral Bridge Safety Railing Clamping:
+      // Prevents falling off the sides into lake water while crossing
+      if (this.position.z < 30.6 || this.position.z > 39.4) {
+        // On North or South bridge span walkways: clamp inside handrails (|dx| <= 1.62)
+        const dx = this.position.x - (-35);
+        if (Math.abs(dx) > 1.62) {
+          this.position.x = -35 + Math.sign(dx) * 1.62;
+          this.velocity.x *= -0.2;
+        }
+      } else {
+        // In Central Lotus Gazebo: clamp within outer perimeter balustrades (r <= 4.18m)
+        if (distToLake > 4.18) {
+          // Allow passing only through North & South portals (where |dx| <= 1.55)
+          const dx = Math.abs(this.position.x - (-35));
+          if (dx > 1.55) {
+            const angle = Math.atan2(this.position.z - 35, this.position.x - (-35));
+            this.position.x = -35 + Math.cos(angle) * 4.16;
+            this.position.z = 35 + Math.sin(angle) * 4.16;
+            this.velocity.x *= -0.2;
+            this.velocity.z *= -0.2;
+          }
+        }
+      }
+    } else if (distToLake < 19.4) {
+      // Off-bridge lake water collision: push gently back to shoreline
       const angle = Math.atan2(this.position.z - 35, this.position.x - (-35));
-      this.position.x = -35 + Math.cos(angle) * 19.3;
-      this.position.z = 35 + Math.sin(angle) * 19.3;
+      this.position.x = -35 + Math.cos(angle) * 19.5;
+      this.position.z = 35 + Math.sin(angle) * 19.5;
       this.velocity.x *= -0.3;
       this.velocity.z *= -0.3;
     }
@@ -375,6 +403,11 @@ export class CharacterController {
 
   public getZoneName(isInsideGreenhouse: boolean): string {
     if (isInsideGreenhouse) return 'Ruang Laboratorium Botani';
+    const distToLake = Math.hypot(this.position.x - (-35), this.position.z - 35);
+    if (distToLake <= 4.45) return 'Paviliun Gazebo Teratai (Danau Irigasi)';
+    if (Math.abs(this.position.x - (-35)) <= 2.05 && this.position.z >= 13.2 && this.position.z <= 56.8) {
+      return 'Jembatan Kayu Melengkung (Danau Irigasi)';
+    }
     if (this.position.x > 15 && this.position.z < -10) return 'Kebun Tomat Komersial (Trellis)';
     if (this.position.x < -15 && this.position.z < -10) return 'Taman Bunga & Polinator';
     if (this.position.x < -7 && this.position.x > -21 && this.position.z > 11 && this.position.z < 26) return 'Kedai Serikat Tani (Agri-Guild Tavern)';
