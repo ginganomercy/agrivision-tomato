@@ -12,6 +12,36 @@ export interface WorldCallbacks {
   onPlayerUpdate?: (pos: { x: number; z: number }, heading: number) => void;
   onQuestUpdate?: (defeated: number, total: number) => void;
   onQuestComplete?: (rewardScore: number) => void;
+  onRoomTransition?: (transition: RoomTransition) => void;
+  onInventoryUpdate?: (items: InventoryItem[]) => void;
+  onItemLooted?: (itemName: string, icon: string, qty: number) => void;
+}
+
+export type RoomLocation = 'meadow' | 'greenhouse' | 'tavern' | 'windmill';
+
+export interface RoomTransition {
+  isTransitioning: boolean;
+  location: RoomLocation;
+  title: string;
+  subtitle: string;
+  icon: string;
+}
+
+export type ItemCategory = 'weapon' | 'produce' | 'loot' | 'consumable';
+export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary';
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: ItemCategory;
+  rarity: ItemRarity;
+  icon: string;
+  description: string;
+  count: number;
+  maxStack: number;
+  attackBonus?: number;
+  speedBonus?: number;
+  isEquipped?: boolean;
 }
 
 export interface InputState {
@@ -22,6 +52,7 @@ export interface InputState {
   jump: boolean;
   turbo: boolean;
   spin: boolean;
+  attack: boolean; // Sword slash attack
 }
 
 export interface PhysicsState {

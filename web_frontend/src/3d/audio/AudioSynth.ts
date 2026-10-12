@@ -3,7 +3,17 @@
  * Uses Web Audio API to generate dynamic acoustic feedback for 3D interactions.
  * Fully decoupled from React lifecycle.
  */
-export type SoundEffectType = 'boing' | 'collect' | 'boost' | 'spin' | 'hit' | 'defeat' | 'fanfare';
+export type SoundEffectType =
+  | 'boing'
+  | 'collect'
+  | 'boost'
+  | 'spin'
+  | 'hit'
+  | 'defeat'
+  | 'fanfare'
+  | 'sword_slash'
+  | 'sword_hit'
+  | 'door_enter';
 
 export class AudioSynth {
   private ctx: AudioContext | null = null;
@@ -140,6 +150,67 @@ export class AudioSynth {
           gain.connect(ctx.destination);
           osc.start(noteStart);
           osc.stop(noteStart + 0.46);
+        });
+      } else if (type === 'sword_slash') {
+        // Sharp metallic blade whoosh (bandpassed noise + sweep)
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(1400, now);
+        osc.frequency.exponentialRampToValueAtTime(320, now + 0.12);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      } else if (type === 'sword_hit') {
+        // Heavy metallic blade impact clank against carapace
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc1.type = 'square';
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(740, now);
+        osc1.frequency.exponentialRampToValueAtTime(120, now + 0.16);
+        osc2.frequency.setValueAtTime(420, now);
+        osc2.frequency.exponentialRampToValueAtTime(80, now + 0.16);
+        gain.gain.setValueAtTime(0.32, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.19);
+        osc2.stop(now + 0.19);
+      } else if (type === 'door_enter') {
+        // Atmospheric wooden creak followed by gentle welcoming chime
+        const oscCreak = ctx.createOscillator();
+        const gainCreak = ctx.createGain();
+        oscCreak.type = 'sawtooth';
+        oscCreak.frequency.setValueAtTime(160, now);
+        oscCreak.frequency.linearRampToValueAtTime(240, now + 0.22);
+        gainCreak.gain.setValueAtTime(0.12, now);
+        gainCreak.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+        oscCreak.connect(gainCreak);
+        gainCreak.connect(ctx.destination);
+        oscCreak.start(now);
+        oscCreak.stop(now + 0.25);
+
+        // Welcoming harmonic chime
+        [659.25, 987.77].forEach((f, idx) => {
+          const oscChime = ctx.createOscillator();
+          const gainChime = ctx.createGain();
+          const startTime = now + 0.18 + idx * 0.08;
+          oscChime.type = 'sine';
+          oscChime.frequency.setValueAtTime(f, startTime);
+          gainChime.gain.setValueAtTime(0.18, startTime);
+          gainChime.gain.exponentialRampToValueAtTime(0.001, startTime + 0.55);
+          oscChime.connect(gainChime);
+          gainChime.connect(ctx.destination);
+          oscChime.start(startTime);
+          oscChime.stop(startTime + 0.56);
         });
       }
     } catch {

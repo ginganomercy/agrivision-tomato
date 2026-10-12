@@ -28,6 +28,10 @@ export class CharacterController {
   private spinTimer: number = 0;
   private isSpinning: boolean = false;
 
+  // Speed booster state (from Consumable NPK fertilizer)
+  private speedBoostMultiplier: number = 1.0;
+  private speedBoostTimer: number = 0;
+
   // Kinematic tuning constants - tuned for satisfying smooth gliding momentum
   private static readonly ACCELERATION = 28.0;
   private static readonly TURBO_ACCELERATION = 56.0;
@@ -42,6 +46,20 @@ export class CharacterController {
     this.position.copy(initialPosition);
     this.heading = 0;
     this.targetHeading = 0;
+  }
+
+  public warpTo(x: number, y: number, z: number, heading?: number): void {
+    this.position.set(x, y, z);
+    this.velocity.set(0, 0, 0);
+    if (heading !== undefined) {
+      this.heading = heading;
+      this.targetHeading = heading;
+    }
+  }
+
+  public applySpeedBoost(boostRatio: number, durationSeconds: number): void {
+    this.speedBoostMultiplier = 1.0 + boostRatio;
+    this.speedBoostTimer = durationSeconds;
   }
 
   public getPosition(): THREE.Vector3 {
@@ -133,10 +151,17 @@ export class CharacterController {
       moveDir.normalize();
     }
 
-    // 2. Acceleration & Turbo
+    // 2. Acceleration & Turbo (with active consumable boost multiplier)
+    if (this.speedBoostTimer > 0) {
+      this.speedBoostTimer -= clampedDt;
+      if (this.speedBoostTimer <= 0) {
+        this.speedBoostMultiplier = 1.0;
+      }
+    }
+
     const isBoosting = input.turbo;
-    const accel = isBoosting ? CharacterController.TURBO_ACCELERATION : CharacterController.ACCELERATION;
-    const maxSpd = isBoosting ? CharacterController.TURBO_MAX_SPEED : CharacterController.MAX_SPEED;
+    const accel = (isBoosting ? CharacterController.TURBO_ACCELERATION : CharacterController.ACCELERATION) * this.speedBoostMultiplier;
+    const maxSpd = (isBoosting ? CharacterController.TURBO_MAX_SPEED : CharacterController.MAX_SPEED) * this.speedBoostMultiplier;
 
     this.velocity.x += moveDir.x * accel * clampedDt;
     this.velocity.z += moveDir.z * accel * clampedDt;
@@ -256,29 +281,47 @@ export class CharacterController {
     if (this.position.z > limit) { this.position.z = limit; this.velocity.z *= -0.4; }
 
     // Greenhouse Wall Collisions (Width 18: [-9, 9], Depth 14: [-7, 7])
-    // Doorway is on South wall: Z = 7, X between -2.5 and +2.5
     if (isInsideGreenhouse) {
-      // Inside: bounce off walls except doorway
-      if (this.position.x < -8.3) { this.position.x = -8.3; this.velocity.x *= -0.3; }
-      if (this.position.x > 8.3) { this.position.x = 8.3; this.velocity.x *= -0.3; }
-      if (this.position.z < -6.3) { this.position.z = -6.3; this.velocity.z *= -0.3; }
-      // South wall check
-      if (this.position.z > 6.4 && Math.abs(this.position.x) > 2.2) {
-        this.position.z = 6.4;
-        this.velocity.z *= -0.3;
+      // Inside: keep strictly inside interior laboratory walls
+      if (this.position.x < -8.25) { this.position.x = -8.25; this.velocity.x *= -0.2; }
+      if (this.position.x > 8.25) { this.position.x = 8.25; this.velocity.x *= -0.2; }
+      if (this.position.z < -6.25) { this.position.z = -6.25; this.velocity.z *= -0.2; }
+      // South wall: doorway opening is at |x| <= 1.8. Anywhere else, bounce off!
+      if (this.position.z > 6.45 && Math.abs(this.position.x) > 1.8) {
+        this.position.z = 6.45;
+        this.velocity.z *= -0.2;
       }
     } else {
-      // Outside: cannot enter greenhouse through solid glass walls
-      // Can only enter via doorway at Z = 7, X in [-2.4, 2.4]
+      // Outside: 100% SOLID IMPENETRABLE WALLS on North, East, West, and South faces!
+      // Minkowski box: x in [-9.75, 9.75], z in [-7.75, 7.75]
+      const minX = -9.75;
+      const maxX = 9.75;
+      const minZ = -7.75;
+      const maxZ = 7.75;
       if (
-        this.position.x > -9.2 && this.position.x < 9.2 &&
-        this.position.z > -7.2 && this.position.z < 7.2
+        this.position.x > minX && this.position.x < maxX &&
+        this.position.z > minZ && this.position.z < maxZ
       ) {
-        // Entering through doorway
-        if (Math.abs(this.position.x) > 2.4) {
-          // Hit the south outer glass wall
-          if (this.position.z < 7.5 && this.position.z > 6.0) {
-            this.position.z = 7.5;
+        // Only allow passage in South Doorway portal corridor
+        const inDoorwayCorridor = Math.abs(this.position.x) <= 1.8 && this.position.z >= 6.4;
+        if (!inDoorwayCorridor) {
+          const dW = this.position.x - minX;
+          const dE = maxX - this.position.x;
+          const dN = this.position.z - minZ;
+          const dS = maxZ - this.position.z;
+          const minD = Math.min(dW, dE, dN, dS);
+
+          if (minD === dN) {
+            this.position.z = minZ - 0.05;
+            this.velocity.z = Math.min(0, this.velocity.z);
+          } else if (minD === dW) {
+            this.position.x = minX - 0.05;
+            this.velocity.x = Math.min(0, this.velocity.x);
+          } else if (minD === dE) {
+            this.position.x = maxX + 0.05;
+            this.velocity.x = Math.max(0, this.velocity.x);
+          } else {
+            this.position.z = maxZ + 0.05;
             this.velocity.z = Math.max(0, this.velocity.z);
           }
         }

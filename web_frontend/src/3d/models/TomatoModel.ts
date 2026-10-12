@@ -15,6 +15,8 @@ export class TomatoModel {
   private leavesGroup: THREE.Group;
   private mascotGroup: THREE.Group;
   private eyesGroup: THREE.Group;
+  private swordGroup: THREE.Group;
+  private slashTrailMesh!: THREE.Mesh;
   
   // Animation state
   public static readonly BASE_SCALE = 0.82;
@@ -23,6 +25,8 @@ export class TomatoModel {
   private blinkTimer: number = 0;
   private isBlinking: boolean = false;
   private stemSwayPhase: number = 0;
+  private slashTimer: number = 0;
+  private slashCombo: number = 0;
   
   // Disposal tracking
   private disposables: (THREE.BufferGeometry | THREE.Material)[] = [];
@@ -36,6 +40,7 @@ export class TomatoModel {
     this.leavesGroup = new THREE.Group();
     this.mascotGroup = new THREE.Group();
     this.eyesGroup = new THREE.Group();
+    this.swordGroup = new THREE.Group();
 
     this.group.add(this.tiltGroup);
     this.tiltGroup.add(this.visualMeshGroup);
@@ -44,11 +49,13 @@ export class TomatoModel {
     this.buildCalyxAndStem();
     this.buildDewDrops();
     this.buildMascotFace();
+    this.buildSword();
 
     this.visualMeshGroup.add(this.calyxGroup);
     this.visualMeshGroup.add(this.stemGroup);
     this.visualMeshGroup.add(this.leavesGroup);
     this.visualMeshGroup.add(this.mascotGroup);
+    this.visualMeshGroup.add(this.swordGroup);
 
     // Initial scale
     this.visualMeshGroup.scale.set(TomatoModel.BASE_SCALE, TomatoModel.BASE_SCALE, TomatoModel.BASE_SCALE);
@@ -275,6 +282,115 @@ export class TomatoModel {
     this.mascotGroup.add(rightBlush);
   }
 
+  /**
+   * Constructs 3D Fantasy Botanical Leaf Blade (Sword Weapon)
+   */
+  private buildSword(): void {
+    const swordBladeMat = new THREE.MeshStandardMaterial({
+      color: 0xecf0f1,
+      metalness: 0.92,
+      roughness: 0.15
+    });
+    const goldGuardMat = new THREE.MeshStandardMaterial({
+      color: 0xf39c12,
+      metalness: 0.85,
+      roughness: 0.25
+    });
+    const emeraldGemMat = new THREE.MeshStandardMaterial({
+      color: 0x2ecc71,
+      roughness: 0.1,
+      emissive: 0x27ae60,
+      emissiveIntensity: 0.45
+    });
+    const hiltLeatherMat = new THREE.MeshStandardMaterial({
+      color: 0x4a2e18,
+      roughness: 0.85
+    });
+    const slashTrailMat = new THREE.MeshBasicMaterial({
+      color: 0x70ffdd,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide
+    });
+    this.disposables.push(swordBladeMat, goldGuardMat, emeraldGemMat, hiltLeatherMat, slashTrailMat);
+
+    // 1. Blade body (Length 0.72m, tapered dual edge)
+    const bladeGeo = new THREE.BoxGeometry(0.09, 0.72, 0.024);
+    bladeGeo.translate(0, 0.44, 0); // pivot at guard
+    this.disposables.push(bladeGeo);
+    const bladeMesh = new THREE.Mesh(bladeGeo, swordBladeMat);
+    bladeMesh.castShadow = true;
+    this.swordGroup.add(bladeMesh);
+
+    // Pointed blade tip
+    const tipGeo = new THREE.ConeGeometry(0.065, 0.22, 4);
+    tipGeo.rotateY(Math.PI / 4);
+    tipGeo.translate(0, 0.88, 0);
+    this.disposables.push(tipGeo);
+    const tipMesh = new THREE.Mesh(tipGeo, swordBladeMat);
+    tipMesh.castShadow = true;
+    this.swordGroup.add(tipMesh);
+
+    // Green fuller line (Leaf Rune)
+    const runeGeo = new THREE.BoxGeometry(0.02, 0.55, 0.026);
+    runeGeo.translate(0, 0.40, 0);
+    this.disposables.push(runeGeo);
+    const runeMesh = new THREE.Mesh(runeGeo, emeraldGemMat);
+    this.swordGroup.add(runeMesh);
+
+    // 2. Crossguard (Winged botanical guard)
+    const guardGeo = new THREE.BoxGeometry(0.32, 0.06, 0.07);
+    guardGeo.translate(0, 0.06, 0);
+    this.disposables.push(guardGeo);
+    const guardMesh = new THREE.Mesh(guardGeo, goldGuardMat);
+    guardMesh.castShadow = true;
+    this.swordGroup.add(guardMesh);
+
+    // Emerald center gem
+    const gemGeo = new THREE.SphereGeometry(0.045, 8, 8);
+    gemGeo.translate(0, 0.06, 0.038);
+    this.disposables.push(gemGeo);
+    const gemMesh = new THREE.Mesh(gemGeo, emeraldGemMat);
+    this.swordGroup.add(gemMesh);
+
+    // 3. Grip & Pommel
+    const gripGeo = new THREE.CylinderGeometry(0.032, 0.035, 0.22, 8);
+    gripGeo.translate(0, -0.07, 0);
+    this.disposables.push(gripGeo);
+    const gripMesh = new THREE.Mesh(gripGeo, hiltLeatherMat);
+    this.swordGroup.add(gripMesh);
+
+    const pommelGeo = new THREE.SphereGeometry(0.055, 8, 8);
+    pommelGeo.translate(0, -0.20, 0);
+    this.disposables.push(pommelGeo);
+    const pommelMesh = new THREE.Mesh(pommelGeo, goldGuardMat);
+    this.swordGroup.add(pommelMesh);
+
+    // 4. Slash Trail Arc (Crescent sweep ribbon)
+    const arcGeo = new THREE.RingGeometry(0.65, 1.15, 16, 1, 0, Math.PI * 0.75);
+    arcGeo.rotateX(Math.PI / 2);
+    this.disposables.push(arcGeo);
+    this.slashTrailMesh = new THREE.Mesh(arcGeo, slashTrailMat);
+    this.slashTrailMesh.position.set(0, 0.15, 0.35);
+    this.slashTrailMesh.visible = false;
+    this.visualMeshGroup.add(this.slashTrailMesh);
+
+    // Initial position: sheathed at right flank
+    this.swordGroup.position.set(0.72, 0.15, -0.15);
+    this.swordGroup.rotation.set(0.35, 0.25, 0.65);
+  }
+
+  public triggerSlash(): boolean {
+    if (this.slashTimer > 0.08) return false;
+    this.slashTimer = 0.28;
+    this.slashCombo = (this.slashCombo + 1) % 2;
+    return true;
+  }
+
+  public isSlashing(): boolean {
+    return this.slashTimer > 0;
+  }
+
   public setMascotVisible(visible: boolean): void {
     this.mascotGroup.visible = visible;
   }
@@ -285,6 +401,7 @@ export class TomatoModel {
    * - Organic mascot stride hop, idle breathing, and volume-conserving squash & stretch on visualMeshGroup
    * - Dynamic harmonic stem spring inertia and secondary leaf flutter
    * - Expressive eye blinking
+   * - Dynamic 3D Sword slashing and blade trail arcs
    */
   public updateAnimation(
     deltaTime: number,
@@ -365,6 +482,37 @@ export class TomatoModel {
       }
     } else {
       this.eyesGroup.scale.y = 1.0;
+    }
+
+    // 5. Dynamic 3D Sword Animation & Slash Swing
+    if (this.slashTimer > 0) {
+      this.slashTimer -= deltaTime;
+      const progress = Math.max(0, 1.0 - this.slashTimer / 0.28);
+      const isReverse = this.slashCombo === 1;
+      const startAngle = isReverse ? Math.PI * 0.55 : -Math.PI * 0.45;
+      const endAngle = isReverse ? -Math.PI * 0.45 : Math.PI * 0.55;
+      const currentAngle = THREE.MathUtils.lerp(startAngle, endAngle, progress);
+
+      this.swordGroup.position.set(
+        Math.cos(currentAngle) * 0.65,
+        0.20 + Math.sin(progress * Math.PI) * 0.18,
+        Math.sin(currentAngle) * 0.55 + 0.35
+      );
+      this.swordGroup.rotation.set(
+        0.35,
+        currentAngle + Math.PI / 2,
+        isReverse ? -1.1 : 1.1
+      );
+
+      // Flash slash trail arc
+      this.slashTrailMesh.visible = true;
+      (this.slashTrailMesh.material as THREE.MeshBasicMaterial).opacity = Math.sin(progress * Math.PI) * 0.85;
+      this.slashTrailMesh.rotation.y = isReverse ? -currentAngle : currentAngle;
+    } else {
+      // Resting position at right hip
+      this.swordGroup.position.set(0.72, 0.15, -0.15);
+      this.swordGroup.rotation.set(0.35, 0.25, 0.65);
+      this.slashTrailMesh.visible = false;
     }
   }
 

@@ -4,7 +4,7 @@
  * character kinematics, collectible collision detection, and audio feedback.
  */
 import * as THREE from 'three';
-import type { CameraMode, InputState, WorldCallbacks, WorldEngineOptions } from '../types';
+import type { CameraMode, InputState, RoomLocation, InventoryItem, WorldCallbacks, WorldEngineOptions } from '../types';
 import { AudioSynth } from '../audio/AudioSynth';
 import { TomatoModel } from '../models/TomatoModel';
 import { GreenhousePavilion } from '../world/GreenhousePavilion';
@@ -12,6 +12,7 @@ import { BotanicalMeadow } from '../world/BotanicalMeadow';
 import { CollectiblesManager } from '../world/CollectiblesManager';
 import { MonsterManager } from '../world/MonsterManager';
 import { CharacterController } from '../controller/CharacterController';
+import { InventoryManager } from '../world/InventoryManager';
 
 export class WorldEngine {
   // Core Three.js components
@@ -31,6 +32,7 @@ export class WorldEngine {
   private collectibles: CollectiblesManager;
   private monsters: MonsterManager;
   private controller: CharacterController;
+  private inventory: InventoryManager;
 
   // State
   private inputState: InputState = {
@@ -40,13 +42,18 @@ export class WorldEngine {
     right: false,
     jump: false,
     turbo: false,
-    spin: false
+    spin: false,
+    attack: false
   };
 
   private cameraMode: CameraMode = 'chase';
   private callbacks: WorldCallbacks;
   private currentZoneName: string = '';
   private lastReportedSpeed: number = -1;
+
+  // Room Location & Cinematic Transition State
+  private currentRoom: RoomLocation = 'meadow';
+  private isTransitioningRoom: boolean = false;
 
   // Orbit camera drag state
   private isPointerDown: boolean = false;
@@ -93,6 +100,12 @@ export class WorldEngine {
     this.monsters = new MonsterManager();
     this.tomatoModel = new TomatoModel();
     this.controller = new CharacterController();
+
+    // 4b. Initialize Inventory System & Wire Callbacks
+    this.inventory = new InventoryManager(
+      (items) => this.callbacks.onInventoryUpdate?.(items),
+      (name, icon, qty) => this.callbacks.onItemLooted?.(name, icon, qty)
+    );
 
     // Wire Quest Callbacks
     this.monsters.onQuestUpdate = (defeated, total) => {
@@ -231,6 +244,9 @@ export class WorldEngine {
     if (key === 'turbo' && value) {
       this.audioSynth.play('boost');
     }
+    if (key === 'attack' && value) {
+      this.triggerSwordAttack();
+    }
   }
 
   public setCameraMode(mode: CameraMode): void {
@@ -270,8 +286,145 @@ export class WorldEngine {
         this.controller.addScore(hitResult.scoreGained);
         this.audioSynth.play(hitResult.defeated ? 'defeat' : 'hit');
         this.callbacks.onScoreChange?.(this.controller.getScore());
+        if (hitResult.defeated && hitResult.monsterType) {
+          this.inventory.addMonsterLoot(hitResult.monsterType);
+        }
       }
     }
+  }
+
+  /**
+   * Triggers a 3D leaf blade sword slash attack combo
+   */
+  public triggerSwordAttack(): boolean {
+    const executed = this.tomatoModel.triggerSlash();
+    if (executed) {
+      this.audioSynth.play('sword_slash');
+
+      // Extended sword melee range check against pest monsters
+      const hitResult = this.monsters.checkAttackHit(
+        this.controller.getPosition(),
+        false,
+        false,
+        false,
+        true // isSwordSlash
+      );
+
+      if (hitResult) {
+        const equipped = this.inventory.getEquippedWeapon();
+        const weaponBonus = equipped?.attackBonus || 25;
+        this.controller.addScore(hitResult.scoreGained + weaponBonus);
+        this.audioSynth.play('sword_hit');
+        this.callbacks.onScoreChange?.(this.controller.getScore());
+
+        if (hitResult.defeated && hitResult.monsterType) {
+          this.inventory.addMonsterLoot(hitResult.monsterType);
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Initiates a seamless cinematic RPG room transition with vignette and audio
+   */
+  public startRoomTransition(targetRoom: RoomLocation): void {
+    if (this.isTransitioningRoom || targetRoom === this.currentRoom) return;
+    this.isTransitioningRoom = true;
+
+    let title = 'Hamparan Padang Rumput Hijau';
+    let subtitle = 'Eksplorasi Lanskap Pertanian Holtikultura Terbuka';
+    let icon = '🌿';
+
+    if (targetRoom === 'greenhouse') {
+      title = 'Laboratorium Rumah Kaca Botani';
+      subtitle = 'Pusat Riset Kultivar & Nutrisi Hidroponik Agrivision';
+      icon = '🔬';
+    } else if (targetRoom === 'tavern') {
+      title = 'Kedai Serikat Tani (Agri-Guild Tavern)';
+      subtitle = 'Pusat Istirahat Pemburu Hama & Bursa Panen Komoditas';
+      icon = '🍺';
+    } else if (targetRoom === 'windmill') {
+      title = 'Menara Observasi Kincir Angin';
+      subtitle = 'Titik Pantau Cuaca & Turbin Angin Ramah Lingkungan';
+      icon = '🌾';
+    }
+
+    this.audioSynth.play('door_enter');
+
+    // Notify React UI for cinematic load screen overlay
+    this.callbacks.onRoomTransition?.({
+      isTransitioning: true,
+      location: targetRoom,
+      title,
+      subtitle,
+      icon
+    });
+
+    // 380ms midpoint: warp player coordinates cleanly
+    setTimeout(() => {
+      const prevRoom = this.currentRoom;
+      this.currentRoom = targetRoom;
+
+      if (targetRoom === 'greenhouse') {
+        this.controller.warpTo(0, 0.1, 4.6, Math.PI); // facing North inside
+      } else if (targetRoom === 'tavern') {
+        this.controller.warpTo(-14, 0.45, 17.8, Math.PI); // inside tavern floor
+      } else if (targetRoom === 'windmill') {
+        this.controller.warpTo(38, 6.2, 40.0, -Math.PI * 0.75); // balcony deck
+      } else {
+        // Exiting back into meadow
+        if (prevRoom === 'greenhouse') {
+          this.controller.warpTo(0, 0.1, 8.8, 0); // facing South
+        } else if (prevRoom === 'tavern') {
+          this.controller.warpTo(-14, 0.28, 24.8, 0); // on porch facing South
+        } else if (prevRoom === 'windmill') {
+          this.controller.warpTo(38, 0.1, 33.8, 0); // ground
+        } else {
+          this.controller.warpTo(0, 0.1, 8.8, 0);
+        }
+      }
+
+      // 760ms: Complete transition and fade back in
+      setTimeout(() => {
+        this.isTransitioningRoom = false;
+        this.callbacks.onRoomTransition?.({
+          isTransitioning: false,
+          location: this.currentRoom,
+          title,
+          subtitle,
+          icon
+        });
+      }, 380);
+    }, 380);
+  }
+
+  public getInventory(): InventoryItem[] {
+    return this.inventory.getItems();
+  }
+
+  public useInventoryItem(id: string): { success: boolean; message: string; speedBoost?: number } {
+    const res = this.inventory.useItem(id);
+    if (res.success) {
+      this.audioSynth.play('collect');
+      if (res.speedBoost) {
+        this.controller.applySpeedBoost(res.speedBoost, 15);
+      }
+    }
+    return res;
+  }
+
+  public equipInventoryWeapon(id: string): { success: boolean; message: string; atk: number } {
+    const res = this.inventory.equipWeapon(id);
+    if (res.success) {
+      this.audioSynth.play('sword_slash');
+    }
+    return res;
+  }
+
+  public getCurrentRoom(): RoomLocation {
+    return this.currentRoom;
   }
 
   public getQuestStatus(): { defeated: number; total: number; completed: boolean } {
@@ -324,12 +477,46 @@ export class WorldEngine {
       this.callbacks.onBounce?.(this.controller.getBounceCount());
     }
 
-    // 1b. Dynamic Player-Centric Shadow Tracking (Shadows follow player everywhere across 180m)
+    // 1b. Dynamic Building Portal Transitions Detection
+    if (!this.isTransitioningRoom) {
+      const pos = state.position;
+      if (this.currentRoom === 'meadow') {
+        // Greenhouse South door portal
+        if (Math.abs(pos.x) <= 1.6 && pos.z <= 6.8 && pos.z >= 5.8) {
+          this.startRoomTransition('greenhouse');
+        }
+        // Agri-Guild Tavern porch front door
+        else if (pos.x >= -16.2 && pos.x <= -11.8 && pos.z <= 22.8 && pos.z >= 21.6) {
+          this.startRoomTransition('tavern');
+        }
+        // Windmill base observation stairs
+        else if (pos.x >= 36.0 && pos.x <= 40.0 && pos.z >= 35.8 && pos.z <= 37.8) {
+          this.startRoomTransition('windmill');
+        }
+      } else if (this.currentRoom === 'greenhouse') {
+        // Exiting Greenhouse south door
+        if (Math.abs(pos.x) <= 1.8 && pos.z >= 6.8) {
+          this.startRoomTransition('meadow');
+        }
+      } else if (this.currentRoom === 'tavern') {
+        // Exiting Tavern door onto porch
+        if (pos.x >= -16.2 && pos.x <= -11.8 && pos.z >= 22.4) {
+          this.startRoomTransition('meadow');
+        }
+      } else if (this.currentRoom === 'windmill') {
+        // Exiting Windmill balcony deck down stairs
+        if (pos.z <= 37.0) {
+          this.startRoomTransition('meadow');
+        }
+      }
+    }
+
+    // 1c. Dynamic Player-Centric Shadow Tracking (Shadows follow player everywhere across 180m)
     this.sunLight.position.set(state.position.x + 32, 45, state.position.z + 22);
     this.sunLight.target.position.copy(state.position);
     this.sunLight.target.updateMatrixWorld();
 
-    // 1c. Dispatch real-time coordinates and heading for HUD Radar Mini-Map
+    // 1d. Dispatch real-time coordinates and heading for HUD Radar Mini-Map
     this.callbacks.onPlayerUpdate?.({ x: state.position.x, z: state.position.z }, state.heading);
 
     // 2. Dynamic 5-Zone Name Detection Callback
@@ -370,6 +557,7 @@ export class WorldEngine {
     if (collected) {
       this.controller.addScore(collected.points);
       this.audioSynth.play('collect');
+      this.inventory.addGoldenDew();
       this.callbacks.onScoreChange?.(this.controller.getScore());
     }
 
@@ -380,12 +568,16 @@ export class WorldEngine {
       state.position,
       this.controller.getIsSpinning(),
       isStompAttack,
-      state.isBoosting
+      state.isBoosting,
+      this.tomatoModel.isSlashing()
     );
     if (attackHit) {
       this.controller.addScore(attackHit.scoreGained);
       this.audioSynth.play(attackHit.defeated ? 'defeat' : 'hit');
       this.callbacks.onScoreChange?.(this.controller.getScore());
+      if (attackHit.defeated && attackHit.monsterType) {
+        this.inventory.addMonsterLoot(attackHit.monsterType);
+      }
     }
 
     // 6. Update Meadow Living Ecosystem (Windmill, butterflies, clouds, spores)

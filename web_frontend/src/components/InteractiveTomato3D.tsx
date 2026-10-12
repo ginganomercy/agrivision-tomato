@@ -26,7 +26,7 @@ import {
   X
 } from 'lucide-react';
 import { WorldEngine } from '../3d/engine/WorldEngine';
-import type { CameraMode, InputState } from '../3d/types';
+import type { CameraMode, InputState, RoomTransition, InventoryItem } from '../3d/types';
 
 interface InteractiveTomato3DProps {
   onInteract?: (action: string) => void;
@@ -64,6 +64,15 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   const [questDefeated, setQuestDefeated] = useState<number>(0);
   const [isQuestCompleted, setIsQuestCompleted] = useState<boolean>(false);
   const [showQuestCelebration, setShowQuestCelebration] = useState<boolean>(false);
+
+  // Room Transition & Inventory State
+  const [roomTransition, setRoomTransition] = useState<RoomTransition | null>(null);
+  const [isInventoryOpen, setIsInventoryOpen] = useState<boolean>(false);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
+  const [lootToasts, setLootToasts] = useState<{ id: number; name: string; icon: string; qty: number }[]>([]);
+  const [useFeedback, setUseFeedback] = useState<string | null>(null);
 
   // 1. Detect Screen Orientation, Touch Capability, and Size Changes
   useEffect(() => {
@@ -241,6 +250,19 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
           setIsQuestCompleted(true);
           setShowQuestCelebration(true);
           setTimeout(() => setShowQuestCelebration(false), 5500);
+        },
+        onRoomTransition: (transition) => {
+          setRoomTransition(transition);
+        },
+        onInventoryUpdate: (items) => {
+          setInventoryItems(items);
+        },
+        onItemLooted: (name, icon, qty) => {
+          const toastId = Date.now() + Math.random();
+          setLootToasts((prev) => [...prev.slice(-3), { id: toastId, name, icon, qty }]);
+          setTimeout(() => {
+            setLootToasts((prev) => prev.filter((t) => t.id !== toastId));
+          }, 3200);
         }
       }
     });
@@ -248,6 +270,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     engine.init(mountRef.current);
     engineRef.current = engine;
     setRemainingCollectibles(engine.getActiveCollectibles().length);
+    setInventoryItems(engine.getInventory());
 
     // Keyboard Input Listeners
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -263,7 +286,14 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         engine.triggerJump();
       }
       if (key === 'shift') engine.setInput('turbo', true);
-      if (key === 'e' || key === 'f') engine.triggerSpin();
+      if (key === 'e') engine.triggerSpin();
+      if (key === 'f' || key === 'j') engine.triggerSwordAttack();
+      if (key === 'i' || key === 'b') {
+        setIsInventoryOpen((prev) => !prev);
+      }
+      if (key === 'escape') {
+        setIsInventoryOpen(false);
+      }
       if (key === 'r') {
         engine.resetCharacter();
         setRemainingCollectibles(engine.getActiveCollectibles().length);
@@ -544,6 +574,26 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     engineRef.current?.triggerSpin();
   }, []);
 
+  const handleSwordAttack = useCallback(() => {
+    engineRef.current?.triggerSwordAttack();
+  }, []);
+
+  const handleUseItem = useCallback((itemId: string) => {
+    const res = engineRef.current?.useInventoryItem(itemId);
+    if (res?.message) {
+      setUseFeedback(res.message);
+      setTimeout(() => setUseFeedback(null), 2500);
+    }
+  }, []);
+
+  const handleEquipWeapon = useCallback((itemId: string) => {
+    const res = engineRef.current?.equipInventoryWeapon(itemId);
+    if (res?.message) {
+      setUseFeedback(res.message);
+      setTimeout(() => setUseFeedback(null), 2500);
+    }
+  }, []);
+
   const handleReset = useCallback(() => {
     engineRef.current?.resetCharacter();
     if (engineRef.current) {
@@ -788,6 +838,32 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
           >
             <Map size={13} />
             {!isMobileLandscape && <span>Radar</span>}
+          </button>
+
+          {/* Inventory Bag Toggle Button */}
+          <button
+            onClick={() => setIsInventoryOpen((prev) => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: isMobileLandscape ? '6px 9px' : '7px 11px',
+              borderRadius: 10,
+              fontSize: 11,
+              fontWeight: 600,
+              background: isInventoryOpen ? 'rgba(234, 179, 8, 0.9)' : 'rgba(15, 23, 42, 0.85)',
+              border: `1px solid ${isInventoryOpen ? '#FDE047' : 'rgba(234, 179, 8, 0.45)'}`,
+              color: '#FFF',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: isInventoryOpen ? '0 0 14px rgba(234, 179, 8, 0.5)' : 'none',
+              transition: 'all 0.2s'
+            }}
+            title="Buka Tas & Inventori Peralatan (I)"
+          >
+            <span style={{ fontSize: 13 }}>🎒</span>
+            {!isMobileLandscape && <span>Tas ({inventoryItems.length}/16)</span>}
           </button>
 
           {/* Audio FX */}
@@ -1168,6 +1244,25 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             >
               SPIN
             </button>
+
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleSwordAttack(); }}
+              style={{
+                height: 28,
+                padding: '0 8px',
+                borderRadius: 8,
+                background: 'rgba(234, 179, 8, 0.25)',
+                border: '1px solid #FDE047',
+                color: '#FEF08A',
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: 'pointer',
+                touchAction: 'none'
+              }}
+              title="Tebas Pedang Daun Botani (F)"
+            >
+              ⚔️ TEBAS
+            </button>
           </div>
         )}
       </div>
@@ -1281,10 +1376,34 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
                 boxShadow: '0 4px 14px rgba(225, 29, 72, 0.35)',
                 touchAction: 'none'
               }}
-              title="Serang Hama / Putar Spin (E / F)"
+              title="Serang Putar Spin (E)"
             >
               <Sparkles size={16} />
-              <span style={{ fontSize: 7.5, fontWeight: 800 }}>SERANG</span>
+              <span style={{ fontSize: 7.5, fontWeight: 800 }}>PUTAR</span>
+            </button>
+
+            {/* Sword Melee Attack (Round Amber) */}
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleSwordAttack(); }}
+              style={{
+                width: 50,
+                height: 50,
+                borderRadius: '50%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.8), rgba(239, 68, 68, 0.8))',
+                border: '2.5px solid #FDE047',
+                color: '#FFF',
+                cursor: 'pointer',
+                boxShadow: '0 4px 18px rgba(234, 179, 8, 0.55)',
+                touchAction: 'none'
+              }}
+              title="Tebas Pedang Daun Botani (F)"
+            >
+              <span style={{ fontSize: 16 }}>⚔️</span>
+              <span style={{ fontSize: 7.5, fontWeight: 900, color: '#FEF08A' }}>TEBAS</span>
             </button>
 
             {/* Primary Jump (Large Round Emerald) */}
@@ -1424,6 +1543,435 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               cursor: 'crosshair'
             }}
           />
+        </div>
+      )}
+
+      {/* 🎁 FLOATING LOOT TOAST NOTIFICATIONS */}
+      <div style={{
+        position: 'absolute',
+        top: isMobileLandscape ? 84 : 96,
+        left: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        zIndex: 35,
+        pointerEvents: 'none'
+      }}>
+        {lootToasts.map((toast) => (
+          <div
+            key={toast.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(15, 23, 42, 0.94)',
+              border: '1px solid rgba(52, 211, 153, 0.5)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              borderRadius: 12,
+              padding: '6px 12px',
+              color: '#F8FAFC',
+              fontSize: 11,
+              fontWeight: 600,
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)'
+            }}
+          >
+            <span style={{ fontSize: 16 }}>{toast.icon}</span>
+            <span>
+              +{toast.qty} <strong style={{ color: '#34D399' }}>{toast.name}</strong> masuk ke tas!
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* 🎒 16-SLOT RPG INVENTORY MODAL */}
+      {isInventoryOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(3, 7, 18, 0.78)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 80,
+          padding: isMobileLandscape ? 12 : 20,
+          pointerEvents: 'auto'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: isMobileLandscape ? 680 : 560,
+            maxHeight: isMobileLandscape ? '94vh' : '88vh',
+            background: 'rgba(15, 23, 42, 0.96)',
+            border: '1.5px solid rgba(52, 211, 153, 0.4)',
+            borderRadius: 24,
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.8), 0 0 32px rgba(16, 185, 129, 0.2)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 18px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(30, 41, 59, 0.45)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>🎒</span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#F8FAFC', letterSpacing: '0.03em' }}>
+                    TAS & INVENTORI PETANI
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94A3B8' }}>
+                    Slot Terisi: {inventoryItems.length} / 16 • Tekan [I] atau [Esc] untuk tutup
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsInventoryOpen(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: 10,
+                  color: '#CBD5E1',
+                  padding: 6,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Category Tabs */}
+            <div style={{
+              display: 'flex',
+              gap: 6,
+              padding: '8px 18px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              overflowX: 'auto'
+            }}>
+              {[
+                { id: 'all', label: 'Semua', icon: '📦' },
+                { id: 'weapon', label: 'Senjata', icon: '🗡️' },
+                { id: 'produce', label: 'Panen', icon: '🌱' },
+                { id: 'consumable', label: 'Konsumsi', icon: '🧪' },
+                { id: 'loot', label: 'Loot Hama', icon: '🪲' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveCategoryFilter(tab.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '5px 12px',
+                    borderRadius: 10,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    background: activeCategoryFilter === tab.id ? '#10B981' : 'rgba(30, 41, 59, 0.6)',
+                    border: `1px solid ${activeCategoryFilter === tab.id ? '#34D399' : 'rgba(255, 255, 255, 0.08)'}`,
+                    color: '#FFF',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <span>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Body: Left Grid + Right Inspector */}
+            <div style={{
+              display: 'flex',
+              flexDirection: isMobileLandscape ? 'row' : 'column',
+              padding: 16,
+              gap: 14,
+              overflowY: 'auto'
+            }}>
+              {/* 16-Slot Grid */}
+              <div style={{
+                flex: 1,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: 8
+              }}>
+                {Array.from({ length: 16 }).map((_, index) => {
+                  const filtered = activeCategoryFilter === 'all' 
+                    ? inventoryItems 
+                    : inventoryItems.filter(i => i.category === activeCategoryFilter);
+                  const item = filtered[index];
+                  const isSelected = selectedItem && item && selectedItem.id === item.id;
+
+                  if (!item) {
+                    return (
+                      <div
+                        key={`empty_${index}`}
+                        style={{
+                          aspectRatio: '1',
+                          borderRadius: 14,
+                          background: 'rgba(30, 41, 59, 0.25)',
+                          border: '1.5px dashed rgba(255, 255, 255, 0.08)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'rgba(255, 255, 255, 0.12)',
+                          fontSize: 11,
+                          fontFamily: 'monospace'
+                        }}
+                      >
+                        {index + 1}
+                      </div>
+                    );
+                  }
+
+                  const rarityBorder = 
+                    item.rarity === 'legendary' ? '#F59E0B' :
+                    item.rarity === 'epic' ? '#A855F7' :
+                    item.rarity === 'rare' ? '#38BDF8' : '#10B981';
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedItem(item)}
+                      style={{
+                        aspectRatio: '1',
+                        borderRadius: 14,
+                        background: isSelected ? 'rgba(16, 185, 129, 0.25)' : 'rgba(30, 41, 59, 0.7)',
+                        border: `2px solid ${isSelected ? '#34D399' : rarityBorder}`,
+                        position: 'relative',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        boxShadow: isSelected ? '0 0 16px rgba(16, 185, 129, 0.5)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <span style={{ fontSize: 24 }}>{item.icon}</span>
+                      {item.count > 1 && (
+                        <span style={{
+                          position: 'absolute',
+                          bottom: 3,
+                          right: 5,
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: '#FFF',
+                          background: 'rgba(0, 0, 0, 0.8)',
+                          padding: '1px 5px',
+                          borderRadius: 6
+                        }}>
+                          x{item.count}
+                        </span>
+                      )}
+                      {item.isEquipped && (
+                        <span style={{
+                          position: 'absolute',
+                          top: 3,
+                          left: 4,
+                          fontSize: 8,
+                          fontWeight: 900,
+                          color: '#FDE047',
+                          background: 'rgba(0, 0, 0, 0.85)',
+                          padding: '1px 4px',
+                          borderRadius: 4,
+                          border: '1px solid #EAB308'
+                        }}>
+                          E
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Item Inspector Pane */}
+              <div style={{
+                width: isMobileLandscape ? 230 : '100%',
+                background: 'rgba(30, 41, 59, 0.5)',
+                borderRadius: 16,
+                padding: 12,
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                {selectedItem ? (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 24 }}>{selectedItem.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#F8FAFC' }}>
+                          {selectedItem.name}
+                        </div>
+                        <div style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          color: selectedItem.rarity === 'epic' ? '#C084FC' : selectedItem.rarity === 'rare' ? '#38BDF8' : '#34D399'
+                        }}>
+                          {selectedItem.rarity} • {selectedItem.category}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#CBD5E1', lineHeight: 1.45, marginBottom: 10 }}>
+                      {selectedItem.description}
+                    </div>
+                    {selectedItem.attackBonus && (
+                      <div style={{ fontSize: 11, color: '#F87171', fontWeight: 700, marginBottom: 4 }}>
+                        ⚔️ Bonus Serangan: +{selectedItem.attackBonus} ATK
+                      </div>
+                    )}
+                    {selectedItem.speedBonus && (
+                      <div style={{ fontSize: 11, color: '#38BDF8', fontWeight: 700, marginBottom: 4 }}>
+                        ⚡ Dorongan Gerak: +{Math.round(selectedItem.speedBonus * 100)}% SPD
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: '#64748B', textAlign: 'center', margin: 'auto 0' }}>
+                    Pilih item di tas untuk melihat rincian & menggunakan.
+                  </div>
+                )}
+
+                {/* Action Button inside Inspector */}
+                {selectedItem && (
+                  <div style={{ marginTop: 10 }}>
+                    {selectedItem.category === 'weapon' ? (
+                      <button
+                        disabled={selectedItem.isEquipped}
+                        onClick={() => handleEquipWeapon(selectedItem.id)}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          borderRadius: 10,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: selectedItem.isEquipped ? 'rgba(100, 116, 139, 0.4)' : '#0284C7',
+                          border: 'none',
+                          color: '#FFF',
+                          cursor: selectedItem.isEquipped ? 'default' : 'pointer'
+                        }}
+                      >
+                        {selectedItem.isEquipped ? '✓ Terpasang' : 'Pasang Senjata'}
+                      </button>
+                    ) : selectedItem.category === 'consumable' ? (
+                      <button
+                        onClick={() => handleUseItem(selectedItem.id)}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          borderRadius: 10,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: '#10B981',
+                          border: 'none',
+                          color: '#FFF',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Gunakan Item
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Action feedback message */}
+            {useFeedback && (
+              <div style={{
+                padding: '8px 16px',
+                background: 'rgba(16, 185, 129, 0.2)',
+                borderTop: '1px solid rgba(16, 185, 129, 0.4)',
+                fontSize: 11,
+                color: '#34D399',
+                textAlign: 'center',
+                fontWeight: 600
+              }}>
+                {useFeedback}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 🚪 CINEMATIC ROOM TRANSITION LOADING SCREEN */}
+      {roomTransition?.isTransitioning && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'radial-gradient(circle at center, rgba(16, 185, 129, 0.15) 0%, #030712 75%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          pointerEvents: 'all',
+          color: '#FFF',
+          textAlign: 'center',
+          padding: 24
+        }}>
+          <div style={{
+            width: 76,
+            height: 76,
+            borderRadius: '50%',
+            background: 'rgba(16, 185, 129, 0.18)',
+            border: '2px solid #34D399',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 36,
+            boxShadow: '0 0 32px rgba(16, 185, 129, 0.5)',
+            marginBottom: 16
+          }}>
+            {roomTransition.icon}
+          </div>
+          <div style={{
+            fontSize: 20,
+            fontWeight: 800,
+            letterSpacing: '0.4px',
+            color: '#F8FAFC',
+            marginBottom: 6,
+            textShadow: '0 2px 10px rgba(0,0,0,0.8)'
+          }}>
+            {roomTransition.title}
+          </div>
+          <div style={{
+            fontSize: 12,
+            color: '#94A3B8',
+            maxWidth: 420,
+            lineHeight: 1.5,
+            marginBottom: 20
+          }}>
+            {roomTransition.subtitle}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 16,
+              height: 16,
+              border: '2px solid rgba(52, 211, 153, 0.25)',
+              borderTopColor: '#34D399',
+              borderRadius: '50%'
+            }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#34D399', letterSpacing: '0.06em' }}>
+              MEMASUKI WILAYAH...
+            </span>
+          </div>
         </div>
       )}
     </div>

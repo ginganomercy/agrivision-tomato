@@ -37,6 +37,7 @@ export interface AttackResult {
   hit: boolean;
   defeated: boolean;
   monsterName: string;
+  monsterType: MonsterType;
   scoreGained: number;
   hitPosition: THREE.Vector3;
 }
@@ -262,10 +263,11 @@ export class MonsterManager {
     playerPos: THREE.Vector3,
     isSpinning: boolean,
     isJumping: boolean,
-    isBoosting: boolean
+    isBoosting: boolean,
+    isSwordSlash: boolean = false
   ): AttackResult | null {
-    // Attack radius: Spin attack has wide reach (2.6m), stomp jump/tackle has 1.8m
-    const attackRange = isSpinning ? 2.6 : (isJumping || isBoosting ? 1.85 : 0);
+    // Attack radius: Sword slash has wide focused reach (2.85m), spin attack has 2.6m, stomp jump/tackle has 1.85m
+    const attackRange = isSwordSlash ? 2.85 : (isSpinning ? 2.6 : (isJumping || isBoosting ? 1.85 : 0));
     if (attackRange <= 0) return null;
 
     for (let i = 0; i < this.monsters.length; i++) {
@@ -274,8 +276,8 @@ export class MonsterManager {
 
       const dist = Math.hypot(playerPos.x - monster.position.x, playerPos.z - monster.position.z);
       if (dist < attackRange) {
-        // Monster hit!
-        monster.hp -= 1;
+        // Monster hit! (Sword deals more damage)
+        monster.hp -= isSwordSlash ? 2 : 1;
         monster.flinchTimer = 0.35;
 
         // Apply knockback away from player
@@ -317,6 +319,7 @@ export class MonsterManager {
           hit: true,
           defeated,
           monsterName: monster.name,
+          monsterType: monster.type,
           scoreGained,
           hitPosition: monster.position.clone()
         };
