@@ -97,7 +97,8 @@ jobs:
               --exclude='venv' \
               --exclude='__pycache__' \
               --exclude='*.pyc' \
-              -czf /tmp/agrivision-payload.tar.gz .
+              --exclude='agrivision-payload.tar.gz' \
+              -czf agrivision-payload.tar.gz .
 
       - name: 🌐 Connect to Tailscale Network
         if: env.HAS_TAILSCALE == 'true'
@@ -112,9 +113,8 @@ jobs:
           username: ${{ secrets.SSH_USER || secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY || secrets.SERVER_SSH_KEY }}
           port: ${{ vars.SERVER_PORT || secrets.SERVER_PORT || '22' }}
-          source: "/tmp/agrivision-payload.tar.gz"
-          target: "/tmp/"
-          strip_components: 1
+          source: "agrivision-payload.tar.gz"
+          target: "/tmp"
 
       - name: 🔐 Execute Remote Deployment via SSH
         uses: appleboy/ssh-action@v1.0.3
