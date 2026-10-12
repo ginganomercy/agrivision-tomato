@@ -184,6 +184,11 @@ jobs:
             echo "[INFO] Menerapkan full-stack agrivision ke Docker Swarm..."
             docker stack deploy -c docker-compose.yml agrivision
 
+            # Memaksa rolling update pada Docker Swarm agar memuat image terbaru yang baru di-build
+            echo "[INFO] Memaksa rolling restart service Docker Swarm agar image terbaru aktif..."
+            docker service update --image agrivision_web:latest --force agrivision_web
+            docker service update --image agrivision_api:latest --force agrivision_api
+
             # 9. Loop Verifikasi Kesiapan (Readiness Probe untuk API & Web)
             echo "[INFO] Menunggu service aktif dan melewati healthcheck..."
             for i in $(seq 1 12); do
