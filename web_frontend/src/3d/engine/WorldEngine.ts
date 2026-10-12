@@ -118,17 +118,26 @@ export class WorldEngine {
   public init(container: HTMLElement): void {
     this.container = container;
 
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 620;
+
     // Initialize WebGLRenderer
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance'
     });
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.setSize(w, h);
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
+    this.renderer.domElement.style.display = 'block';
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
 
     container.appendChild(this.renderer.domElement);
 
@@ -152,8 +161,8 @@ export class WorldEngine {
 
   private onResize = (): void => {
     if (!this.container || !this.renderer) return;
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
+    const w = this.container.clientWidth || 800;
+    const h = this.container.clientHeight || 620;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);

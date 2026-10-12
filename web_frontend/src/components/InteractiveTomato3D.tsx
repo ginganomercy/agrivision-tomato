@@ -14,7 +14,8 @@ import {
   Trophy,
   Flame,
   HelpCircle,
-  MapPin
+  MapPin,
+  X
 } from 'lucide-react';
 import { WorldEngine } from '../3d/engine/WorldEngine';
 import type { CameraMode, InputState } from '../3d/types';
@@ -108,7 +109,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     };
   }, []);
 
-  // UI Button Handlers
+  // UI Handlers
   const toggleAudio = useCallback(() => {
     setIsAudioEnabled((prev) => {
       const next = !prev;
@@ -150,188 +151,437 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   }, []);
 
   return (
-    <div className="relative w-full h-[620px] rounded-3xl overflow-hidden border border-emerald-500/20 bg-slate-950 shadow-2xl select-none group">
-      {/* 3D WebGL Canvas Mounting Container */}
-      <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+    <div style={{
+      position: 'relative',
+      width: '100%',
+      height: 620,
+      minHeight: 520,
+      borderRadius: 24,
+      overflow: 'hidden',
+      background: '#070A12',
+      border: '1px solid rgba(16, 185, 129, 0.25)',
+      boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
+      userSelect: 'none',
+      fontFamily: "'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    }}>
+      {/* 3D WebGL Canvas Viewport */}
+      <div 
+        ref={mountRef} 
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          cursor: cameraMode === 'orbit' ? 'grab' : 'default',
+          display: 'block'
+        }} 
+      />
 
-      {/* Top Navigation & Status Bar */}
-      <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
+      {/* Top Floating Header & Status Bar */}
+      <div style={{
+        position: 'absolute',
+        top: 16,
+        left: 16,
+        right: 16,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        pointerEvents: 'none',
+        zIndex: 10,
+        gap: 12
+      }}>
         {/* Left: Dynamic Horticultural Zone Indicator & Stats */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-emerald-500/30 text-white shadow-lg pointer-events-auto">
-            <MapPin className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span className="text-xs font-semibold tracking-wide text-emerald-200">
-              {currentZone}
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            padding: '8px 16px',
+            borderRadius: 16,
+            border: '1px solid rgba(16, 185, 129, 0.4)',
+            color: '#A7F3D0',
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            pointerEvents: 'auto'
+          }}>
+            <MapPin size={16} color="#34D399" />
+            <span>{currentZone}</span>
           </div>
 
-          <div className="hidden sm:flex items-center gap-4 bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 text-white/90 text-xs shadow-lg pointer-events-auto">
-            <div className="flex items-center gap-1.5 font-mono">
-              <Zap className={`w-3.5 h-3.5 ${speedGauge > 50 ? 'text-amber-400 animate-bounce' : 'text-emerald-400'}`} />
-              <span>SPD: <strong className="text-emerald-300">{speedGauge}%</strong></span>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            padding: '8px 16px',
+            borderRadius: 16,
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            color: '#E2E8F0',
+            fontSize: 12,
+            fontFamily: 'monospace',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            pointerEvents: 'auto'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Zap size={14} color={speedGauge > 50 ? '#FBBF24' : '#34D399'} />
+              <span>SPD: <strong style={{ color: '#34D399' }}>{speedGauge}%</strong></span>
             </div>
-            <div className="w-[1px] h-3 bg-white/20" />
-            <div className="flex items-center gap-1.5 font-mono">
-              <Flame className="w-3.5 h-3.5 text-rose-400" />
-              <span>BOUNCES: <strong className="text-rose-300">{bounces}</strong></span>
+            <div style={{ width: 1, height: 14, background: 'rgba(255, 255, 255, 0.2)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Flame size={14} color="#FB7185" />
+              <span>BOUNCES: <strong style={{ color: '#FDA4AF' }}>{bounces}</strong></span>
             </div>
-            <div className="w-[1px] h-3 bg-white/20" />
-            <div className="flex items-center gap-1.5 font-mono">
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>SCORE: <strong className="text-amber-300">{score}</strong></span>
+            <div style={{ width: 1, height: 14, background: 'rgba(255, 255, 255, 0.2)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Trophy size={14} color="#FBBF24" />
+              <span>SCORE: <strong style={{ color: '#FCD34D' }}>{score}</strong></span>
             </div>
           </div>
         </div>
 
         {/* Right: Engine Control Buttons */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'auto' }}>
           <button
             onClick={toggleCamera}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium backdrop-blur-md border transition-all ${
-              cameraMode === 'chase'
-                ? 'bg-slate-900/80 border-white/20 text-white/90 hover:bg-slate-800'
-                : 'bg-emerald-600/90 border-emerald-400 text-white shadow-lg shadow-emerald-500/20'
-            }`}
-            title="Ganti Mode Kamera"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 600,
+              background: cameraMode === 'chase' ? 'rgba(15, 23, 42, 0.85)' : 'rgba(5, 150, 105, 0.9)',
+              border: `1px solid ${cameraMode === 'chase' ? 'rgba(255, 255, 255, 0.15)' : '#34D399'}`,
+              color: '#FFF',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              transition: 'all 0.2s'
+            }}
+            title="Ganti Mode Kamera (Chase / Orbit)"
           >
-            <CameraIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">{cameraMode === 'chase' ? 'Chase Cam' : 'Orbit Cam'}</span>
+            <CameraIcon size={14} />
+            <span>{cameraMode === 'chase' ? 'Chase Cam' : 'Orbit Cam'}</span>
           </button>
 
           <button
             onClick={toggleMascot}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium backdrop-blur-md border transition-all ${
-              mascotMode
-                ? 'bg-rose-500/80 border-rose-400 text-white shadow-lg shadow-rose-500/20'
-                : 'bg-slate-900/80 border-white/20 text-white/70 hover:bg-slate-800'
-            }`}
-            title="Toggle Wajah Maskot"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 600,
+              background: mascotMode ? 'rgba(225, 29, 72, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+              border: `1px solid ${mascotMode ? '#FB7185' : 'rgba(255, 255, 255, 0.15)'}`,
+              color: '#FFF',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              transition: 'all 0.2s'
+            }}
+            title="Toggle Tampilan Wajah Maskot"
           >
-            {mascotMode ? <Smile className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            <span className="hidden sm:inline">Mascot Face</span>
+            {mascotMode ? <Smile size={14} /> : <Eye size={14} />}
+            <span>Mascot Face</span>
           </button>
 
           <button
             onClick={toggleAudio}
-            className={`p-2 rounded-xl text-xs font-medium backdrop-blur-md border transition-all ${
-              isAudioEnabled
-                ? 'bg-emerald-500/80 border-emerald-400 text-white'
-                : 'bg-slate-900/80 border-white/20 text-white/60 hover:bg-slate-800'
-            }`}
-            title={isAudioEnabled ? 'Matikan Suara' : 'Nyalakan Suara'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px 10px',
+              borderRadius: 12,
+              fontSize: 12,
+              background: isAudioEnabled ? 'rgba(5, 150, 105, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+              border: `1px solid ${isAudioEnabled ? '#34D399' : 'rgba(255, 255, 255, 0.15)'}`,
+              color: '#FFF',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              transition: 'all 0.2s'
+            }}
+            title={isAudioEnabled ? 'Matikan Suara FX' : 'Nyalakan Suara FX'}
           >
-            {isAudioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {isAudioEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
           </button>
 
           <button
             onClick={() => setShowControlsGuide((prev) => !prev)}
-            className="p-2 rounded-xl text-xs font-medium bg-slate-900/80 border border-white/20 text-white/80 hover:bg-slate-800 transition-all"
-            title="Panduan Kontrol"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px 10px',
+              borderRadius: 12,
+              background: 'rgba(15, 23, 42, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              color: '#E2E8F0',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              transition: 'all 0.2s'
+            }}
+            title="Panduan Kontrol Eksplorasi"
           >
-            <HelpCircle className="w-4 h-4" />
+            <HelpCircle size={16} />
           </button>
         </div>
       </div>
 
-      {/* Help Modal Guide */}
+      {/* Floating Controls Guide Card */}
       {showControlsGuide && (
-        <div className="absolute top-16 right-4 w-72 bg-slate-900/95 backdrop-blur-xl border border-white/20 rounded-2xl p-4 text-xs text-slate-200 shadow-2xl z-20">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-bold text-white text-sm">🎮 Kontrol Eksplorasi 3D</span>
+        <div style={{
+          position: 'absolute',
+          top: 68,
+          right: 16,
+          width: 300,
+          background: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: 20,
+          padding: 18,
+          color: '#E2E8F0',
+          fontSize: 12,
+          boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+          zIndex: 30
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: '#38BDF8' }}>
+              🎮 Kontrol Eksplorasi 3D
+            </span>
             <button
               onClick={() => setShowControlsGuide(false)}
-              className="text-slate-400 hover:text-white"
+              style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: 2 }}
             >
-              ✕
+              <X size={16} />
             </button>
           </div>
-          <ul className="space-y-1.5 text-slate-300">
-            <li><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-white/10 text-white">W A S D</kbd> / Panah: Gerakkan Tomat</li>
-            <li><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-white/10 text-white">Spasi</kbd>: Lompat & Pantulkan Buah</li>
-            <li><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-white/10 text-white">Shift</kbd>: Turbo Boost Sprint</li>
-            <li><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-white/10 text-white">E</kbd>: Spin Trick (+50 Poin)</li>
-            <li><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-white/10 text-white">R</kbd>: Reset Posisi Awal</li>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <li><strong style={{ color: '#FFF' }}>W, A, S, D / Panah</strong>: Menjelajahi laboratorium & padang rumput</li>
+            <li><strong style={{ color: '#FFF' }}>Spasi</strong>: Melompat & memantulkan tomat</li>
+            <li><strong style={{ color: '#FFF' }}>Shift</strong>: Turbo sprint akselerasi tinggi</li>
+            <li><strong style={{ color: '#FFF' }}>E</strong>: 360° Acrobatic Spin Trick (+50 Poin)</li>
+            <li><strong style={{ color: '#FFF' }}>R</strong>: Reset posisi ke laboratorium</li>
+            <li><strong style={{ color: '#FFF' }}>Tarik Mouse (Orbit)</strong>: Memutar sudut pandang kamera</li>
           </ul>
-          <p className="mt-2.5 text-[10px] text-emerald-400 font-medium">
-            💡 Kunjungi Greenhouse dan kumpulkan tomat emas di padang rumput!
+          <p style={{ marginTop: 12, fontSize: 11, color: '#34D399', fontWeight: 600 }}>
+            💡 Kunjungi greenhouse dan kumpulkan seluruh buah tomat emas!
           </p>
         </div>
       )}
 
-      {/* Bottom Virtual Gamepad & Action Buttons */}
-      <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none z-10">
-        {/* On-Screen Touch D-Pad */}
-        <div className="bg-slate-900/85 backdrop-blur-md p-2.5 rounded-2xl border border-white/10 shadow-2xl pointer-events-auto flex flex-col items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wider font-mono text-slate-400 mb-0.5">WASD Gamepad</span>
+      {/* Bottom Gamepad & Action Buttons */}
+      <div style={{
+        position: 'absolute',
+        bottom: 18,
+        left: 18,
+        right: 18,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        pointerEvents: 'none',
+        zIndex: 10
+      }}>
+        {/* On-Screen Touch Gamepad */}
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.92)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          padding: 12,
+          borderRadius: 20,
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          boxShadow: '0 12px 36px rgba(0,0,0,0.5)',
+          pointerEvents: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 6
+        }}>
+          <span style={{ fontSize: 10, letterSpacing: '0.08em', color: '#94A3B8', fontFamily: 'monospace', fontWeight: 600 }}>
+            WASD GAMEPAD
+          </span>
+
+          {/* Up Button */}
           <button
             onPointerDown={() => handleVirtualInput('forward', true)}
             onPointerUp={() => handleVirtualInput('forward', false)}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-              activeKeys['w'] || activeKeys['arrowup'] ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-white/80 active:bg-slate-700'
-            }`}
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: activeKeys['w'] || activeKeys['arrowup'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              color: '#FFF',
+              cursor: 'pointer',
+              transition: 'all 0.1s'
+            }}
           >
-            <ArrowUp className="w-5 h-5" />
+            <ArrowUp size={20} />
           </button>
-          <div className="flex gap-1.5">
+
+          {/* Left, Down, Right */}
+          <div style={{ display: 'flex', gap: 6 }}>
             <button
               onPointerDown={() => handleVirtualInput('left', true)}
               onPointerUp={() => handleVirtualInput('left', false)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                activeKeys['a'] || activeKeys['arrowleft'] ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-white/80 active:bg-slate-700'
-              }`}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: activeKeys['a'] || activeKeys['arrowleft'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#FFF',
+                cursor: 'pointer',
+                transition: 'all 0.1s'
+              }}
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft size={20} />
             </button>
             <button
               onPointerDown={() => handleVirtualInput('backward', true)}
               onPointerUp={() => handleVirtualInput('backward', false)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                activeKeys['s'] || activeKeys['arrowdown'] ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-white/80 active:bg-slate-700'
-              }`}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: activeKeys['s'] || activeKeys['arrowdown'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#FFF',
+                cursor: 'pointer',
+                transition: 'all 0.1s'
+              }}
             >
-              <ArrowDown className="w-5 h-5" />
+              <ArrowDown size={20} />
             </button>
             <button
               onPointerDown={() => handleVirtualInput('right', true)}
               onPointerUp={() => handleVirtualInput('right', false)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                activeKeys['d'] || activeKeys['arrowright'] ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-white/80 active:bg-slate-700'
-              }`}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: activeKeys['d'] || activeKeys['arrowright'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#FFF',
+                cursor: 'pointer',
+                transition: 'all 0.1s'
+              }}
             >
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight size={20} />
             </button>
           </div>
-          {/* Quick Action Triggers */}
-          <div className="flex gap-1.5 mt-1">
+
+          {/* Action Row: Turbo, Jump, Spin */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
             <button
               onPointerDown={() => handleVirtualInput('turbo', true)}
               onPointerUp={() => handleVirtualInput('turbo', false)}
-              className="px-2.5 py-1 rounded-lg bg-sky-600/80 active:bg-sky-500 text-white text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '6px 12px',
+                borderRadius: 10,
+                background: activeKeys['shift'] ? '#0284C7' : 'rgba(2, 132, 199, 0.25)',
+                border: '1px solid #0284C7',
+                color: '#FFF',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.05em'
+              }}
             >
-              <Zap className="w-3 h-3" /> Turbo
+              <Zap size={12} />
+              <span>TURBO</span>
             </button>
+
             <button
               onClick={handleJump}
-              className="px-2.5 py-1 rounded-lg bg-emerald-600/80 active:bg-emerald-500 text-white text-[10px] font-bold uppercase tracking-wider"
+              style={{
+                padding: '6px 14px',
+                borderRadius: 10,
+                background: 'rgba(5, 150, 105, 0.25)',
+                border: '1px solid #10B981',
+                color: '#34D399',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.05em'
+              }}
             >
-              Jump
+              JUMP
             </button>
+
             <button
               onClick={handleSpin}
-              className="px-2.5 py-1 rounded-lg bg-rose-600/80 active:bg-rose-500 text-white text-[10px] font-bold uppercase tracking-wider"
+              style={{
+                padding: '6px 12px',
+                borderRadius: 10,
+                background: 'rgba(225, 29, 72, 0.25)',
+                border: '1px solid #FB7185',
+                color: '#FDA4AF',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                letterSpacing: '0.05em'
+              }}
             >
-              Spin
+              SPIN
             </button>
           </div>
         </div>
 
         {/* Reset Position Button */}
-        <div className="pointer-events-auto">
+        <div style={{ pointerEvents: 'auto' }}>
           <button
             onClick={handleReset}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-white/20 text-white/80 hover:text-white hover:bg-slate-800 transition-all shadow-xl text-xs font-semibold"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 18px',
+              borderRadius: 16,
+              background: 'rgba(15, 23, 42, 0.92)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              color: '#E2E8F0',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              transition: 'all 0.2s'
+            }}
           >
-            <RotateCcw className="w-4 h-4 text-emerald-400" />
+            <RotateCcw size={15} color="#34D399" />
             <span>Reset Posisi</span>
           </button>
         </div>
