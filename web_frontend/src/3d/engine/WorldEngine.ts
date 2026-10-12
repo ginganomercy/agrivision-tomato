@@ -371,15 +371,24 @@ export class WorldEngine {
       const prevRoom = this.currentRoom;
       this.currentRoom = targetRoom;
 
-      if (targetRoom === 'greenhouse') {
+      // Adapt Scene Background & Fog based on room location
+      if (targetRoom === 'tavern') {
+        this.scene.background = new THREE.Color(0x23170e); // Warm cozy dark timber interior
+        this.scene.fog = new THREE.FogExp2(0x23170e, 0.012);
+        // Warp player comfortably inside the hall (z = 21.0), facing North into the grand hall
+        this.controller.warpTo(-14.0, -39.16, 21.0, Math.PI);
+      } else if (targetRoom === 'greenhouse') {
+        this.scene.background = new THREE.Color(0x87ceeb);
+        this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.010);
         this.controller.warpTo(0, 0.1, 4.6, Math.PI); // facing North inside
-      } else if (targetRoom === 'tavern') {
-        // Warp player inside spacious 24x18m Guild Tavern floor (-39.16), facing North into the hall
-        this.controller.warpTo(-14.0, -39.16, 24.5, Math.PI);
       } else if (targetRoom === 'windmill') {
+        this.scene.background = new THREE.Color(0x87ceeb);
+        this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
         this.controller.warpTo(38, 6.2, 40.0, -Math.PI * 0.75); // balcony deck
       } else {
         // Exiting back into meadow
+        this.scene.background = new THREE.Color(0x87ceeb);
+        this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
         if (prevRoom === 'greenhouse') {
           this.controller.warpTo(0, 0.1, 8.8, 0); // facing South
         } else if (prevRoom === 'tavern') {
@@ -597,18 +606,24 @@ export class WorldEngine {
 
   private updateCamera(targetPos: THREE.Vector3, targetHeading: number, currentRoom: RoomLocation): void {
     if (this.cameraMode === 'chase') {
-      // Adaptive Chase Camera (6.4m in greenhouse, 6.8m in grand tavern, 8.6m in wide open world)
+      // Adaptive Chase Camera (6.4m in greenhouse, 5.2m in cozy grand tavern, 8.6m in wide open world)
       let camDist = 8.6;
       let camHeight = 3.8;
       if (currentRoom === 'greenhouse') {
         camDist = 6.4;
         camHeight = 3.0;
       } else if (currentRoom === 'tavern') {
-        camDist = 6.8;
-        camHeight = 3.2;
+        camDist = 5.2;
+        camHeight = 2.4;
       }
-      const behindX = targetPos.x - Math.sin(targetHeading) * camDist;
-      const behindZ = targetPos.z - Math.cos(targetHeading) * camDist;
+      let behindX = targetPos.x - Math.sin(targetHeading) * camDist;
+      let behindZ = targetPos.z - Math.cos(targetHeading) * camDist;
+
+      // Inside tavern: strictly clamp camera within hall interior to prevent clipping through perimeter walls!
+      if (currentRoom === 'tavern') {
+        behindX = THREE.MathUtils.clamp(behindX, -24.5, -3.5);
+        behindZ = THREE.MathUtils.clamp(behindZ, 10.5, 26.2);
+      }
 
       // Lerp camera for cinematic smoothness
       this.camera.position.x += (behindX - this.camera.position.x) * 0.08;
