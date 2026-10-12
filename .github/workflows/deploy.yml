@@ -35,7 +35,6 @@ jobs:
 
       - name: 🔍 Static Code Analysis (Flake8)
         run: |
-          # Hentikan pipeline jika ada syntax errors atau undefined names (E9, F63, F7, F82)
           flake8 api_backend/src api_backend/tests --count --select=E9,F63,F7,F82 --show-source --statistics
 
       - name: 🧪 Execute Unit & Integration Test Suite (Pytest)
@@ -56,13 +55,23 @@ jobs:
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🏗️ Build Docker Image (Dry-Run / Cache Validation)
+      - name: 🏗️ Build Docker Image API (Validation)
         uses: docker/build-push-action@v5
         with:
           context: api_backend
           file: api_backend/Dockerfile
           push: false
           tags: agrivision_api:validation
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🏗️ Build Docker Image Web Frontend (Validation)
+        uses: docker/build-push-action@v5
+        with:
+          context: web_frontend
+          file: web_frontend/Dockerfile
+          push: false
+          tags: agrivision_web:validation
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -77,11 +86,35 @@ jobs:
     env:
       HAS_TAILSCALE: ${{ secrets.TAILSCALE_AUTHKEY != '' }}
     steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 📦 Package Clean Source Code Artifact
+        run: |
+          tar --exclude='.git' \
+              --exclude='node_modules' \
+              --exclude='.pytest_cache' \
+              --exclude='venv' \
+              --exclude='__pycache__' \
+              --exclude='*.pyc' \
+              -czf /tmp/agrivision-payload.tar.gz .
+
       - name: 🌐 Connect to Tailscale Network
         if: env.HAS_TAILSCALE == 'true'
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: 🚀 Transfer Code Artifact to Server via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST || secrets.SERVER_HOST }}
+          username: ${{ secrets.SSH_USER || secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY || secrets.SERVER_SSH_KEY }}
+          port: ${{ vars.SERVER_PORT || secrets.SERVER_PORT || '22' }}
+          source: "/tmp/agrivision-payload.tar.gz"
+          target: "/tmp/"
+          strip_components: 1
 
       - name: 🔐 Execute Remote Deployment via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -94,84 +127,81 @@ jobs:
           script: |
             set -e
 
-            # 1. Bersihkan variabel dari karakter newline/CRLF bawaan Windows
+            # 1. Bersihkan variabel dari karakter newline/CRLF
             RAW_DIR="${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/opt/agrivision-tomato' }}"
             DEPLOY_DIR=$(echo "$RAW_DIR" | tr -d '\r\n ' | sed 's:/*$::')
             DEPLOY_DIR="${DEPLOY_DIR:-/opt/agrivision-tomato}"
-            
-            REPO_URL="https://github.com/ginganomercy/agrivision-tomato.git"
             export HF_TOKEN=$(echo "${{ secrets.HF_TOKEN }}" | tr -d '\r\n ')
 
             echo "=========================================="
-            echo "🚀 Starting AgriVision Deployment on Bare-Metal"
+            echo "🚀 Starting AgriVision Full-Stack Deployment"
             echo "Target Directory: $DEPLOY_DIR"
             echo "=========================================="
 
-            # 2. Sinkronisasi Git secara fail-safe & self-healing
+            # 2. Persiapan direktori deployment
             if [ "$EUID" -ne 0 ]; then
               sudo mkdir -p "$DEPLOY_DIR"
               sudo chown -R $USER:$USER "$DEPLOY_DIR"
             else
               mkdir -p "$DEPLOY_DIR"
             fi
-            cd "$DEPLOY_DIR"
-            git config --global --add safe.directory "$DEPLOY_DIR" || true
 
-            if [ ! -d ".git" ]; then
-              echo "[INFO] Menginisialisasi Git repository..."
-              git init
-            fi
-
-            if git remote | grep -q "^origin$"; then
-              git remote set-url origin "$REPO_URL"
+            # 3. Ekstrak payload dari Runner (Zero-Egress: Tidak perlu akses ke github.com)
+            if [ -f "/tmp/agrivision-payload.tar.gz" ]; then
+              echo "[INFO] Mengekstrak payload kode dari GitHub Actions Runner..."
+              tar -xzf /tmp/agrivision-payload.tar.gz -C "$DEPLOY_DIR"
+              rm -f /tmp/agrivision-payload.tar.gz
             else
-              git remote add origin "$REPO_URL"
+              echo "[WARN] Payload SCP tidak ditemukan, mencoba git fallback..."
+              cd "$DEPLOY_DIR"
+              git config --global --add safe.directory "$DEPLOY_DIR" || true
+              git -c http.version=HTTP/1.1 fetch --ipv4 origin main --timeout=15 || true
+              git reset --hard origin/main || true
             fi
 
-            echo "[INFO] Menarik commit terbaru dari GitHub..."
-            git fetch origin main
-            git reset --hard origin/main
-            git clean -fd
-
-            # 3. Pindah ke direktori api_backend
+            # 4. Pindah ke direktori api_backend
             cd "$DEPLOY_DIR/api_backend"
 
-            # 4. Pastikan Docker Swarm aktif
+            # 5. Pastikan Docker Swarm aktif
             if ! docker info --format '{{.Swarm.LocalNodeState}}' | grep -q "active"; then
               echo "[INFO] Menginisialisasi Docker Swarm..."
               docker swarm init || true
             fi
 
-            # 5. Pastikan network front-tier ada
+            # 6. Pastikan network front-tier ada
             if ! docker network inspect front-tier >/dev/null 2>&1; then
               echo "[INFO] Membuat overlay network front-tier..."
               docker network create --driver overlay --attachable front-tier
             fi
 
-            # 6. Build Docker image API dengan dependensi CPU PyTorch terbaru
-            echo "[INFO] Membangun image Docker API..."
+            # 7. Build Docker images untuk API Backend & Web Frontend
+            echo "[INFO] Membangun image Docker API (FastAPI + MobileNetV2)..."
             docker build -t agrivision_api:latest .
 
-            # 7. Deploy Stack ke Docker Swarm
-            echo "[INFO] Menerapkan stack agrivision ke Docker Swarm..."
+            echo "[INFO] Membangun image Docker Web (React 19 + Three.js)..."
+            docker build -t agrivision_web:latest ../web_frontend
+
+            # 8. Deploy Stack ke Docker Swarm
+            echo "[INFO] Menerapkan full-stack agrivision ke Docker Swarm..."
             docker stack deploy -c docker-compose.yml agrivision
 
-            # 8. Loop Verifikasi Kesiapan (Readiness Probe)
+            # 9. Loop Verifikasi Kesiapan (Readiness Probe untuk API & Web)
             echo "[INFO] Menunggu service aktif dan melewati healthcheck..."
             for i in $(seq 1 12); do
-              RUNNING_COUNT=$(docker service ls --filter name=agrivision_api --format '{{.Replicas}}' | cut -d'/' -f1 || echo "0")
-              if [ "$RUNNING_COUNT" = "2" ]; then
-                echo "[INFO] Sukses: 2/2 Replicas sudah Running dan Healthy!"
+              API_COUNT=$(docker service ls --filter name=agrivision_api --format '{{.Replicas}}' | cut -d'/' -f1 || echo "0")
+              WEB_COUNT=$(docker service ls --filter name=agrivision_web --format '{{.Replicas}}' | cut -d'/' -f1 || echo "0")
+              if [ "$API_COUNT" = "2" ] && [ "$WEB_COUNT" = "2" ]; then
+                echo "[INFO] Sukses: 2/2 Replicas API & 2/2 Replicas Web sudah Running dan Healthy!"
                 break
               fi
-              echo "[WAIT] Menunggu replika siap ($i/12)..."
+              echo "[WAIT] Menunggu replika siap (API: $API_COUNT/2, Web: $WEB_COUNT/2) ($i/12)..."
               sleep 5
             done
 
             docker service ps agrivision_api || true
-            docker service logs --tail 30 agrivision_api || true
+            docker service ps agrivision_web || true
 
-            # 9. Sinkronisasi konfigurasi Ingress ke /opt/priv-ingress/conf.d jika direktori ada
+            # 10. Sinkronisasi konfigurasi Ingress ke /opt/priv-ingress/conf.d jika direktori ada
             if [ -d "/opt/priv-ingress/conf.d" ]; then
               echo "[INFO] Menyinkronkan konfigurasi Ingress ke /opt/priv-ingress/conf.d/..."
               if [ "$EUID" -ne 0 ]; then
@@ -192,6 +222,6 @@ jobs:
             fi
 
             echo "=========================================="
-            echo "✅ Deployment Sukses!"
+            echo "✅ Deployment Full-Stack Sukses!"
             echo "=========================================="
             docker service ls
