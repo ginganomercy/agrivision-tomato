@@ -12,12 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 libsm6 libxext6 libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip untuk mendukung modern wheel metadata
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Copy dependency list
 COPY requirements.txt .
 
-# CRITICAL OPTIMIZATION: Instal PyTorch versi CPU-only. 
-# Ini memangkas ukuran Docker Image sebesar ~2 GIGABYTE karena kita tidak perlu file CUDA NVIDIA di server CPU bare-metal.
-RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# CRITICAL OPTIMIZATION: Instal PyTorch versi CPU-only dengan fallback PyPI
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 
 # Instal dependencies aplikasi
 RUN pip install --no-cache-dir -r requirements.txt
