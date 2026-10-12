@@ -124,11 +124,18 @@ jobs:
             # 9. Sinkronisasi konfigurasi Ingress ke /opt/priv-ingress/conf.d jika direktori ada
             if [ -d "/opt/priv-ingress/conf.d" ]; then
               echo "[INFO] Menyinkronkan konfigurasi Ingress ke /opt/priv-ingress/conf.d/..."
-              cp -f agrivision.pbjt.ac.id.conf /opt/priv-ingress/conf.d/
+              if [ "$EUID" -ne 0 ]; then
+                sudo cp -f agrivision.pbjt.ac.id.conf /opt/priv-ingress/conf.d/
+                sudo chmod 644 /opt/priv-ingress/conf.d/agrivision.pbjt.ac.id.conf
+              else
+                cp -f agrivision.pbjt.ac.id.conf /opt/priv-ingress/conf.d/
+                chmod 644 /opt/priv-ingress/conf.d/agrivision.pbjt.ac.id.conf
+              fi
+
               INGRESS_ID=$(docker ps -q -f name=priv-ingress_nginx | head -n 1)
               if [ -n "$INGRESS_ID" ]; then
                 echo "[INFO] Me-reload Nginx Ingress..."
-                docker exec "$INGRESS_ID" nginx -s reload || true
+                docker exec "$INGRESS_ID" nginx -s reload || sudo docker exec "$INGRESS_ID" nginx -s reload || true
               fi
             fi
 
