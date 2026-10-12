@@ -9,7 +9,7 @@ import {
   ArrowUp, 
   ArrowDown, 
   ArrowLeft, 
-  ArrowRight,
+  ArrowRight, 
   Camera as CameraIcon,
   Trophy,
   Flame,
@@ -18,7 +18,11 @@ import {
   Map,
   Maximize2,
   Minimize2,
+  Maximize,
+  Minimize,
   Navigation,
+  Smartphone,
+  Sparkles,
   X
 } from 'lucide-react';
 import { WorldEngine } from '../3d/engine/WorldEngine';
@@ -29,6 +33,7 @@ interface InteractiveTomato3DProps {
 }
 
 export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInteract }) => {
+  const rootRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<WorldEngine | null>(null);
   const radarCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,7 +53,144 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   const [activeKeys, setActiveKeys] = useState<{ [key: string]: boolean }>({});
   const [remainingCollectibles, setRemainingCollectibles] = useState<number>(22);
 
-  // Initialize 3D Engine Facade
+  // Mobile Landscape & Tilt Ergonomics States
+  const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isTiltEnabled, setIsTiltEnabled] = useState<boolean>(false);
+  const [tiltSteerAngle, setTiltSteerAngle] = useState<number>(0);
+  const tiltSteerRef = useRef<number>(0);
+
+  // 1. Detect Screen Orientation and Size Changes
+  useEffect(() => {
+    const handleViewportChange = () => {
+      const isLandscape = window.innerWidth > window.innerHeight;
+      const isShortHeight = window.innerHeight <= 560;
+      const isMobileWidth = window.innerWidth <= 1024;
+      setIsMobileLandscape(isLandscape && (isShortHeight || isMobileWidth));
+
+      const isCurrentFullscreen = !!(
+        document.fullscreenElement || 
+        (document as any).webkitFullscreenElement
+      );
+      setIsFullscreen(isCurrentFullscreen);
+    };
+
+    handleViewportChange();
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    document.addEventListener('fullscreenchange', handleViewportChange);
+    document.addEventListener('webkitfullscreenchange', handleViewportChange);
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('orientationchange', handleViewportChange);
+      document.removeEventListener('fullscreenchange', handleViewportChange);
+      document.removeEventListener('webkitfullscreenchange', handleViewportChange);
+    };
+  }, []);
+
+  // 2. Fullscreen Mode Toggle
+  const toggleFullscreen = useCallback(async () => {
+    if (!rootRef.current) return;
+    try {
+      if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+        if (rootRef.current.requestFullscreen) {
+          await rootRef.current.requestFullscreen();
+        } else if ((rootRef.current as any).webkitRequestFullscreen) {
+          await (rootRef.current as any).webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen request failed:', err);
+    }
+  }, []);
+
+  // 3. Gyroscope / DeviceTilt Steering ("HP Miring/Tilt")
+  const toggleTiltSteer = useCallback(async () => {
+    if (!isTiltEnabled) {
+      // iOS 13+ Accelerometer permission request
+      if (typeof (DeviceOrientationEvent as any)?.requestPermission === 'function') {
+        try {
+          const permission = await (DeviceOrientationEvent as any).requestPermission();
+          if (permission !== 'granted') {
+            alert('Izin sensor gerak gyroscope ditolak oleh browser.');
+            return;
+          }
+        } catch (e) {
+          console.warn('Gyro permission error:', e);
+        }
+      }
+      setIsTiltEnabled(true);
+    } else {
+      setIsTiltEnabled(false);
+      // Reset steering inputs
+      engineRef.current?.setInput('left', false);
+      engineRef.current?.setInput('right', false);
+      setTiltSteerAngle(0);
+      tiltSteerRef.current = 0;
+    }
+  }, [isTiltEnabled]);
+
+  useEffect(() => {
+    if (!isTiltEnabled) return;
+
+    const DEADZONE = 8.0; // 8 degrees deadzone for comfortable neutral hand position
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      const gamma = e.gamma ?? 0; // Roll in portrait (-90 to 90)
+      const beta = e.beta ?? 0;   // Pitch in portrait (-180 to 180)
+      const angle = (window.screen?.orientation?.angle) ?? (window.orientation as number) ?? 0;
+
+      let steer = 0;
+
+      // Map device tilt according to landscape holding angle
+      if (angle === 90) {
+        steer = beta; // Tilting phone like steering wheel
+      } else if (angle === -90 || angle === 270) {
+        steer = -beta;
+      } else {
+        steer = gamma;
+      }
+
+      steer = Math.max(-50, Math.min(50, steer));
+      tiltSteerRef.current = steer;
+
+      if (steer < -DEADZONE) {
+        engineRef.current?.setInput('left', true);
+        engineRef.current?.setInput('right', false);
+      } else if (steer > DEADZONE) {
+        engineRef.current?.setInput('right', true);
+        engineRef.current?.setInput('left', false);
+      } else {
+        engineRef.current?.setInput('left', false);
+        engineRef.current?.setInput('right', false);
+      }
+    };
+
+    window.addEventListener('deviceorientation', handleOrientation);
+
+    // Throttle UI indicator updates (10 fps) to prevent react render overhead
+    const timer = setInterval(() => {
+      setTiltSteerAngle(Math.round(tiltSteerRef.current));
+    }, 100);
+
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      clearInterval(timer);
+      engineRef.current?.setInput('left', false);
+      engineRef.current?.setInput('right', false);
+      setTiltSteerAngle(0);
+      tiltSteerRef.current = 0;
+    };
+  }, [isTiltEnabled]);
+
+  // 4. Initialize 3D Engine Facade
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -126,7 +268,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     };
   }, []);
 
-  // Real-time 2D Canvas Radar Rendering Loop (60 FPS decoupled from React state)
+  // 5. Real-time 2D Canvas Radar Rendering Loop (60 FPS decoupled from React state)
   useEffect(() => {
     if (!showMiniMap) return;
     let animId: number;
@@ -143,7 +285,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       const cx = w / 2;
       const cy = h / 2;
       const worldRadius = 84.0;
-      const pad = 12;
+      const pad = 10;
       const scale = (cx - pad) / worldRadius;
 
       // 1. Clear & Background Radial Gradient
@@ -187,10 +329,10 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       ctx.font = 'bold 8px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('N', cx, 8);
-      ctx.fillText('S', cx, h - 8);
-      ctx.fillText('W', 8, cy);
-      ctx.fillText('E', w - 8, cy);
+      ctx.fillText('N', cx, 7);
+      ctx.fillText('S', cx, h - 7);
+      ctx.fillText('W', 7, cy);
+      ctx.fillText('E', w - 7, cy);
 
       // Coordinate mapping helpers
       const mapX = (x: number) => cx + x * scale;
@@ -214,7 +356,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       ctx.moveTo(mapX(-35), mapY(16.5));
       ctx.lineTo(mapX(-35), mapY(25.5));
       ctx.strokeStyle = '#92400e';
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2.2;
       ctx.stroke();
 
       // Zone 2: North-East Commercial Trellis Rows (35, -32)
@@ -224,7 +366,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         ctx.moveTo(mapX(24), rowZ);
         ctx.lineTo(mapX(46), rowZ);
         ctx.strokeStyle = 'rgba(34, 197, 94, 0.55)';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.4;
         ctx.stroke();
       }
 
@@ -258,13 +400,13 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       ctx.font = 'bold 7px monospace';
       ctx.fillText('LAB', cx, cy);
 
-      // 5. Active Golden Collectibles (Shimmering dots)
+      // 5. Active Golden Collectibles
       const items = engineRef.current?.getActiveCollectibles() || [];
       items.forEach((it) => {
         const ix = mapX(it.x);
         const iy = mapY(it.z);
         ctx.beginPath();
-        ctx.arc(ix, iy, 2.4, 0, Math.PI * 2);
+        ctx.arc(ix, iy, 2.2, 0, Math.PI * 2);
         ctx.fillStyle = '#FBBF24';
         ctx.fill();
         ctx.strokeStyle = '#FFFBEB';
@@ -278,13 +420,13 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       const py = mapY(p.z);
 
       // Heading Directional Arrow Pointer
-      const headLen = 12;
+      const headLen = 11;
       const tipX = px + Math.sin(p.heading) * headLen;
       const tipY = py + Math.cos(p.heading) * headLen;
-      const leftWingX = px + Math.sin(p.heading + 2.4) * 6;
-      const leftWingY = py + Math.cos(p.heading + 2.4) * 6;
-      const rightWingX = px + Math.sin(p.heading - 2.4) * 6;
-      const rightWingY = py + Math.cos(p.heading - 2.4) * 6;
+      const leftWingX = px + Math.sin(p.heading + 2.4) * 5.5;
+      const leftWingY = py + Math.cos(p.heading + 2.4) * 5.5;
+      const rightWingX = px + Math.sin(p.heading - 2.4) * 5.5;
+      const rightWingY = py + Math.cos(p.heading - 2.4) * 5.5;
 
       ctx.beginPath();
       ctx.moveTo(tipX, tipY);
@@ -297,11 +439,11 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
 
       // Red Tomato Player Marker Dot
       ctx.beginPath();
-      ctx.arc(px, py, 4.2, 0, Math.PI * 2);
+      ctx.arc(px, py, 3.8, 0, Math.PI * 2);
       ctx.fillStyle = '#EF4444';
       ctx.fill();
       ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.4;
       ctx.stroke();
 
       ctx.restore();
@@ -312,7 +454,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [showMiniMap, miniMapExpanded]);
+  }, [showMiniMap, miniMapExpanded, isMobileLandscape]);
 
   // UI Handlers
   const toggleAudio = useCallback(() => {
@@ -359,19 +501,24 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   }, []);
 
   return (
-    <div style={{
-      position: 'relative',
-      width: '100%',
-      height: 620,
-      minHeight: 520,
-      borderRadius: 24,
-      overflow: 'hidden',
-      background: '#070A12',
-      border: '1px solid rgba(16, 185, 129, 0.25)',
-      boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
-      userSelect: 'none',
-      fontFamily: "'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    }}>
+    <div 
+      ref={rootRef}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: isFullscreen ? '100vh' : '100%',
+        minHeight: isFullscreen ? '100vh' : 380,
+        borderRadius: isFullscreen ? 0 : 24,
+        overflow: 'hidden',
+        background: '#070A12',
+        border: isFullscreen ? 'none' : '1px solid rgba(16, 185, 129, 0.25)',
+        boxShadow: isFullscreen ? 'none' : '0 20px 50px rgba(0, 0, 0, 0.6)',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        touchAction: 'none',
+        fontFamily: "'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+      }}
+    >
       {/* 3D WebGL Canvas Viewport */}
       <div 
         ref={mountRef} 
@@ -382,89 +529,144 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
           width: '100%',
           height: '100%',
           cursor: cameraMode === 'orbit' ? 'grab' : 'default',
-          display: 'block'
+          display: 'block',
+          touchAction: 'none'
         }} 
       />
 
       {/* Top Floating Header & Status Bar */}
       <div style={{
         position: 'absolute',
-        top: 16,
-        left: 16,
-        right: 16,
+        top: isMobileLandscape ? 8 : 14,
+        left: isMobileLandscape ? 12 : 16,
+        right: isMobileLandscape ? 12 : 16,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         pointerEvents: 'none',
-        zIndex: 10,
-        gap: 12,
-        flexWrap: 'wrap'
+        zIndex: 20,
+        gap: 8,
+        flexWrap: 'nowrap'
       }}>
         {/* Left: Dynamic Horticultural Zone Indicator & Stats */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 1, overflow: 'hidden' }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 6,
             background: 'rgba(15, 23, 42, 0.88)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
-            padding: '7px 14px',
-            borderRadius: 14,
+            padding: isMobileLandscape ? '5px 10px' : '7px 14px',
+            borderRadius: 12,
             border: '1px solid rgba(16, 185, 129, 0.4)',
             color: '#A7F3D0',
-            fontSize: 12,
+            fontSize: isMobileLandscape ? 11 : 12,
             fontWeight: 600,
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            whiteSpace: 'nowrap'
           }}>
-            <MapPin size={15} color="#34D399" />
+            <MapPin size={isMobileLandscape ? 13 : 15} color="#34D399" />
             <span>{currentZone}</span>
           </div>
 
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 12,
+            gap: isMobileLandscape ? 8 : 12,
             background: 'rgba(15, 23, 42, 0.85)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
-            padding: '7px 14px',
-            borderRadius: 14,
+            padding: isMobileLandscape ? '5px 10px' : '7px 14px',
+            borderRadius: 12,
             border: '1px solid rgba(255, 255, 255, 0.12)',
             color: '#E2E8F0',
-            fontSize: 11,
+            fontSize: isMobileLandscape ? 10 : 11,
             fontFamily: 'monospace',
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            whiteSpace: 'nowrap'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Zap size={13} color={speedGauge > 50 ? '#FBBF24' : '#34D399'} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Zap size={12} color={speedGauge > 50 ? '#FBBF24' : '#34D399'} />
               <span>SPD: <strong style={{ color: '#34D399' }}>{speedGauge}%</strong></span>
             </div>
-            <div style={{ width: 1, height: 12, background: 'rgba(255, 255, 255, 0.2)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Flame size={13} color="#FB7185" />
-              <span>BOUNCES: <strong style={{ color: '#FDA4AF' }}>{bounces}</strong></span>
+            <div style={{ width: 1, height: 10, background: 'rgba(255, 255, 255, 0.2)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Flame size={12} color="#FB7185" />
+              <span><strong style={{ color: '#FDA4AF' }}>{bounces}</strong></span>
             </div>
-            <div style={{ width: 1, height: 12, background: 'rgba(255, 255, 255, 0.2)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Trophy size={13} color="#FBBF24" />
-              <span>SCORE: <strong style={{ color: '#FCD34D' }}>{score}</strong></span>
+            <div style={{ width: 1, height: 10, background: 'rgba(255, 255, 255, 0.2)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Trophy size={12} color="#FBBF24" />
+              <span><strong style={{ color: '#FCD34D' }}>{score}</strong></span>
             </div>
           </div>
         </div>
 
         {/* Right: Engine Control Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, pointerEvents: 'auto', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, pointerEvents: 'auto', flexShrink: 0 }}>
+          {/* Fullscreen Toggle */}
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: isMobileLandscape ? '6px 10px' : '7px 12px',
+              borderRadius: 10,
+              fontSize: 11,
+              fontWeight: 600,
+              background: isFullscreen ? 'rgba(56, 189, 248, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+              border: `1px solid ${isFullscreen ? '#38BDF8' : 'rgba(255, 255, 255, 0.15)'}`,
+              color: '#FFF',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              transition: 'all 0.2s'
+            }}
+            title={isFullscreen ? 'Keluar Layar Penuh' : 'Mode Layar Penuh (Fullscreen)'}
+          >
+            {isFullscreen ? <Minimize size={13} /> : <Maximize size={13} />}
+            {!isMobileLandscape && <span>{isFullscreen ? 'Normal' : 'Layar Penuh'}</span>}
+          </button>
+
+          {/* Gyroscope / Tilt Steering Button ("HP Miring/Tilt") */}
+          <button
+            onClick={toggleTiltSteer}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: isMobileLandscape ? '6px 10px' : '7px 12px',
+              borderRadius: 10,
+              fontSize: 11,
+              fontWeight: 600,
+              background: isTiltEnabled ? 'rgba(16, 185, 129, 0.9)' : 'rgba(15, 23, 42, 0.85)',
+              border: `1px solid ${isTiltEnabled ? '#34D399' : 'rgba(255, 255, 255, 0.15)'}`,
+              color: '#FFF',
+              cursor: 'pointer',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              boxShadow: isTiltEnabled ? '0 0 14px rgba(16, 185, 129, 0.5)' : 'none',
+              transition: 'all 0.2s'
+            }}
+            title={isTiltEnabled ? 'Matikan Sensor Miring (Gyroscope)' : 'Nyalakan Sensor Miring HP (Tilt Steering)'}
+          >
+            <Smartphone size={13} />
+            <span>{isTiltEnabled ? 'Tilt: ON' : 'Tilt: OFF'}</span>
+          </button>
+
+          {/* Camera Mode Toggle */}
           <button
             onClick={toggleCamera}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '7px 12px',
-              borderRadius: 12,
+              gap: 5,
+              padding: isMobileLandscape ? '6px 9px' : '7px 12px',
+              borderRadius: 10,
               fontSize: 11,
               fontWeight: 600,
               background: cameraMode === 'chase' ? 'rgba(15, 23, 42, 0.85)' : 'rgba(5, 150, 105, 0.9)',
@@ -473,23 +675,23 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               cursor: 'pointer',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
               transition: 'all 0.2s'
             }}
             title="Ganti Mode Kamera (Chase / Orbit)"
           >
-            <CameraIcon size={14} />
-            <span>{cameraMode === 'chase' ? 'Chase Cam' : 'Orbit Cam'}</span>
+            <CameraIcon size={13} />
+            {!isMobileLandscape && <span>{cameraMode === 'chase' ? 'Chase Cam' : 'Orbit Cam'}</span>}
           </button>
 
+          {/* Mascot Face Mode Toggle */}
           <button
             onClick={toggleMascot}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '7px 12px',
-              borderRadius: 12,
+              gap: 5,
+              padding: isMobileLandscape ? '6px 9px' : '7px 12px',
+              borderRadius: 10,
               fontSize: 11,
               fontWeight: 600,
               background: mascotMode ? 'rgba(225, 29, 72, 0.85)' : 'rgba(15, 23, 42, 0.85)',
@@ -498,13 +700,12 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               cursor: 'pointer',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
               transition: 'all 0.2s'
             }}
-            title="Toggle Tampilan Wajah Maskot"
+            title="Toggle Wajah Maskot Tomat"
           >
-            {mascotMode ? <Smile size={14} /> : <Eye size={14} />}
-            <span>Mascot Face</span>
+            {mascotMode ? <Smile size={13} /> : <Eye size={13} />}
+            {!isMobileLandscape && <span>Mascot</span>}
           </button>
 
           {/* Mini-Map Radar Toggle */}
@@ -513,9 +714,9 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '7px 12px',
-              borderRadius: 12,
+              gap: 5,
+              padding: isMobileLandscape ? '6px 9px' : '7px 11px',
+              borderRadius: 10,
               fontSize: 11,
               fontWeight: 600,
               background: showMiniMap ? 'rgba(16, 185, 129, 0.85)' : 'rgba(15, 23, 42, 0.85)',
@@ -524,23 +725,23 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               cursor: 'pointer',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
               transition: 'all 0.2s'
             }}
             title={showMiniMap ? 'Sembunyikan Mini-Map Radar' : 'Tampilkan Mini-Map Radar'}
           >
-            <Map size={14} />
-            <span>Radar</span>
+            <Map size={13} />
+            {!isMobileLandscape && <span>Radar</span>}
           </button>
 
+          {/* Audio FX */}
           <button
             onClick={toggleAudio}
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '7px 9px',
-              borderRadius: 12,
+              padding: isMobileLandscape ? '6px 8px' : '7px 9px',
+              borderRadius: 10,
               fontSize: 11,
               background: isAudioEnabled ? 'rgba(5, 150, 105, 0.85)' : 'rgba(15, 23, 42, 0.85)',
               border: `1px solid ${isAudioEnabled ? '#34D399' : 'rgba(255, 255, 255, 0.15)'}`,
@@ -552,17 +753,18 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             }}
             title={isAudioEnabled ? 'Matikan Suara FX' : 'Nyalakan Suara FX'}
           >
-            {isAudioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            {isAudioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
           </button>
 
+          {/* Help Guide */}
           <button
             onClick={() => setShowControlsGuide((prev) => !prev)}
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '7px 9px',
-              borderRadius: 12,
+              padding: isMobileLandscape ? '6px 8px' : '7px 9px',
+              borderRadius: 10,
               background: 'rgba(15, 23, 42, 0.85)',
               border: '1px solid rgba(255, 255, 255, 0.15)',
               color: '#E2E8F0',
@@ -573,32 +775,68 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             }}
             title="Panduan Kontrol Eksplorasi"
           >
-            <HelpCircle size={15} />
+            <HelpCircle size={14} />
           </button>
         </div>
       </div>
+
+      {/* Floating Tilt Horizon Level Indicator (When Sensor Miring is active) */}
+      {isTiltEnabled && (
+        <div style={{
+          position: 'absolute',
+          top: isMobileLandscape ? 50 : 64,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(15, 23, 42, 0.88)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid #10B981',
+          borderRadius: 20,
+          padding: '4px 14px',
+          fontSize: 11,
+          fontFamily: 'monospace',
+          color: '#34D399',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+          zIndex: 25,
+          pointerEvents: 'none'
+        }}>
+          <Smartphone size={12} color="#34D399" />
+          <span>
+            {tiltSteerAngle < -8 
+              ? `◄ MIRING KIRI (${Math.abs(tiltSteerAngle)}°)` 
+              : tiltSteerAngle > 8 
+              ? `MIRING KANAN (${tiltSteerAngle}°) ►` 
+              : `SEIMBANG (${tiltSteerAngle}°)`}
+          </span>
+        </div>
+      )}
 
       {/* Floating Controls Guide Card */}
       {showControlsGuide && (
         <div style={{
           position: 'absolute',
-          top: 68,
+          top: 60,
           right: 16,
           width: 310,
+          maxHeight: '80vh',
+          overflowY: 'auto',
           background: 'rgba(15, 23, 42, 0.95)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
           border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: 20,
-          padding: 18,
+          borderRadius: 18,
+          padding: 16,
           color: '#E2E8F0',
           fontSize: 12,
           boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
-          zIndex: 30
+          zIndex: 35
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <span style={{ fontWeight: 700, fontSize: 13, color: '#38BDF8' }}>
-              🎮 Panduan Eksplorasi Padang Botani
+              🎮 Panduan Eksplorasi Mobile & Tilt
             </span>
             <button
               onClick={() => setShowControlsGuide(false)}
@@ -607,29 +845,30 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               <X size={16} />
             </button>
           </div>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <li><strong style={{ color: '#FFF' }}>W, A, S, D / Panah</strong>: Bergerak bebas ke arah pandangan kamera</li>
-            <li><strong style={{ color: '#FFF' }}>Spasi</strong>: Melompat tinggi & memantulkan tomat</li>
-            <li><strong style={{ color: '#FFF' }}>Shift</strong>: Turbo sprint akselerasi kecepatan penuh</li>
-            <li><strong style={{ color: '#FFF' }}>E</strong>: 360° Acrobatic Spin Trick (+50 Poin)</li>
-            <li><strong style={{ color: '#FFF' }}>R</strong>: Reset posisi karakter ke pintu laboratorium</li>
-            <li><strong style={{ color: '#FFF' }}>Tarik Mouse (Orbit)</strong>: Memutar sudut pandang 360°</li>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <li><strong style={{ color: '#FFF' }}>📱 HP Miring (Landscape)</strong>: Jempol kiri di D-pad, jempol kanan untuk Lompat, Turbo & Spin.</li>
+            <li><strong style={{ color: '#FFF' }}>📲 Sensor Miring (Tilt Steer)</strong>: Miringkan fisik ponsel ke kiri/kanan untuk mengemudi otomatis!</li>
+            <li><strong style={{ color: '#FFF' }}>⛶ Mode Layar Penuh</strong>: Tekan tombol Layar Penuh untuk tampilan borderless tanpa batas.</li>
+            <li><strong style={{ color: '#FFF' }}>W, A, S, D</strong>: Kendali keyboard fisik di laptop / PC.</li>
+            <li><strong style={{ color: '#FFF' }}>Spasi</strong>: Melompat tinggi & memantulkan tomat.</li>
+            <li><strong style={{ color: '#FFF' }}>Shift</strong>: Turbo sprint akselerasi kecepatan penuh.</li>
           </ul>
-          <p style={{ marginTop: 12, fontSize: 11, color: '#34D399', fontWeight: 600 }}>
-            💡 Ikuti jalan setapak batu untuk mengunjungi 5 zona botani dan kumpulkan seluruh tomat emas!
-          </p>
         </div>
       )}
 
-      {/* Bottom-Left: Ergonomic On-Screen Touch Gamepad (Anti-Clipping guaranteed) */}
+      {/* ========================================================================= */}
+      {/* CONTROLLER SECTION: ADAPTIVE MOBILE LANDSCAPE VS DESKTOP LAYOUT           */}
+      {/* ========================================================================= */}
+
+      {/* LEFT THUMB ZONE: Directional D-Pad (Up, Left, Down, Right) */}
       <div style={{
         position: 'absolute',
-        bottom: 24,
-        left: 24,
-        background: 'rgba(15, 23, 42, 0.90)',
+        bottom: isMobileLandscape ? 12 : 24,
+        left: isMobileLandscape ? 14 : 24,
+        background: 'rgba(15, 23, 42, 0.88)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
-        padding: '10px 14px',
+        padding: isMobileLandscape ? '8px 10px' : '10px 14px',
         borderRadius: 20,
         border: '1px solid rgba(255, 255, 255, 0.15)',
         boxShadow: '0 12px 36px rgba(0,0,0,0.5)',
@@ -637,22 +876,24 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 6,
-        zIndex: 15,
-        boxSizing: 'border-box'
+        gap: 5,
+        zIndex: 25,
+        touchAction: 'none'
       }}>
-        <span style={{ fontSize: 9, letterSpacing: '0.1em', color: '#94A3B8', fontFamily: 'monospace', fontWeight: 700 }}>
-          WASD GAMEPAD
+        <span style={{ fontSize: 9, letterSpacing: '0.08em', color: '#94A3B8', fontFamily: 'monospace', fontWeight: 700 }}>
+          {isMobileLandscape ? 'KIRI: ARAH' : 'WASD GAMEPAD'}
         </span>
 
         {/* Up Button */}
         <button
-          onPointerDown={() => handleVirtualInput('forward', true)}
-          onPointerUp={() => handleVirtualInput('forward', false)}
+          onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('forward', true); }}
+          onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('forward', false); }}
+          onPointerLeave={() => handleVirtualInput('forward', false)}
+          onPointerCancel={() => handleVirtualInput('forward', false)}
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
+            width: isMobileLandscape ? 40 : 36,
+            height: isMobileLandscape ? 40 : 36,
+            borderRadius: 12,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -660,23 +901,25 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             border: '1px solid rgba(255, 255, 255, 0.18)',
             color: '#FFF',
             cursor: 'pointer',
-            boxShadow: activeKeys['w'] ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none',
-            transition: 'all 0.1s'
+            boxShadow: activeKeys['w'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+            touchAction: 'none'
           }}
-          title="Maju (W / Panah Atas)"
+          title="Maju (W)"
         >
-          <ArrowUp size={18} />
+          <ArrowUp size={20} />
         </button>
 
         {/* Left, Down, Right Horizontal Row */}
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
           <button
-            onPointerDown={() => handleVirtualInput('left', true)}
-            onPointerUp={() => handleVirtualInput('left', false)}
+            onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('left', true); }}
+            onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('left', false); }}
+            onPointerLeave={() => handleVirtualInput('left', false)}
+            onPointerCancel={() => handleVirtualInput('left', false)}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
+              width: isMobileLandscape ? 40 : 36,
+              height: isMobileLandscape ? 40 : 36,
+              borderRadius: 12,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -684,20 +927,22 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               border: '1px solid rgba(255, 255, 255, 0.18)',
               color: '#FFF',
               cursor: 'pointer',
-              boxShadow: activeKeys['a'] ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none',
-              transition: 'all 0.1s'
+              boxShadow: activeKeys['a'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+              touchAction: 'none'
             }}
-            title="Kiri (A / Panah Kiri)"
+            title="Kiri (A)"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={20} />
           </button>
           <button
-            onPointerDown={() => handleVirtualInput('backward', true)}
-            onPointerUp={() => handleVirtualInput('backward', false)}
+            onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('backward', true); }}
+            onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('backward', false); }}
+            onPointerLeave={() => handleVirtualInput('backward', false)}
+            onPointerCancel={() => handleVirtualInput('backward', false)}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
+              width: isMobileLandscape ? 40 : 36,
+              height: isMobileLandscape ? 40 : 36,
+              borderRadius: 12,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -705,20 +950,22 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               border: '1px solid rgba(255, 255, 255, 0.18)',
               color: '#FFF',
               cursor: 'pointer',
-              boxShadow: activeKeys['s'] ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none',
-              transition: 'all 0.1s'
+              boxShadow: activeKeys['s'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+              touchAction: 'none'
             }}
-            title="Mundur (S / Panah Bawah)"
+            title="Mundur (S)"
           >
-            <ArrowDown size={18} />
+            <ArrowDown size={20} />
           </button>
           <button
-            onPointerDown={() => handleVirtualInput('right', true)}
-            onPointerUp={() => handleVirtualInput('right', false)}
+            onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('right', true); }}
+            onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('right', false); }}
+            onPointerLeave={() => handleVirtualInput('right', false)}
+            onPointerCancel={() => handleVirtualInput('right', false)}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
+              width: isMobileLandscape ? 40 : 36,
+              height: isMobileLandscape ? 40 : 36,
+              borderRadius: 12,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -726,135 +973,258 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               border: '1px solid rgba(255, 255, 255, 0.18)',
               color: '#FFF',
               cursor: 'pointer',
-              boxShadow: activeKeys['d'] ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none',
-              transition: 'all 0.1s'
+              boxShadow: activeKeys['d'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+              touchAction: 'none'
             }}
-            title="Kanan (D / Panah Kanan)"
+            title="Kanan (D)"
           >
-            <ArrowRight size={18} />
+            <ArrowRight size={20} />
           </button>
         </div>
 
-        {/* Action Row: Turbo, Jump, Spin */}
-        <div style={{ display: 'flex', gap: 5, marginTop: 4 }}>
+        {/* On non-landscape/desktop: inline actions underneath D-pad */}
+        {!isMobileLandscape && (
+          <div style={{ display: 'flex', gap: 5, marginTop: 4 }}>
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('turbo', true); }}
+              onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('turbo', false); }}
+              onPointerLeave={() => handleVirtualInput('turbo', false)}
+              onPointerCancel={() => handleVirtualInput('turbo', false)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                height: 26,
+                padding: '0 8px',
+                borderRadius: 8,
+                background: activeKeys['shift'] ? '#0284C7' : 'rgba(2, 132, 199, 0.25)',
+                border: '1px solid #0284C7',
+                color: '#FFF',
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: 'pointer',
+                touchAction: 'none'
+              }}
+              title="Turbo Sprint (Shift)"
+            >
+              <Zap size={11} />
+              <span>TURBO</span>
+            </button>
+
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleJump(); }}
+              style={{
+                height: 26,
+                padding: '0 10px',
+                borderRadius: 8,
+                background: 'rgba(5, 150, 105, 0.25)',
+                border: '1px solid #10B981',
+                color: '#34D399',
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: 'pointer',
+                touchAction: 'none'
+              }}
+              title="Melompat (Spasi)"
+            >
+              JUMP
+            </button>
+
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleSpin(); }}
+              style={{
+                height: 26,
+                padding: '0 8px',
+                borderRadius: 8,
+                background: 'rgba(225, 29, 72, 0.25)',
+                border: '1px solid #FB7185',
+                color: '#FDA4AF',
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: 'pointer',
+                touchAction: 'none'
+              }}
+              title="360 Akrobatik Spin (E)"
+            >
+              SPIN
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* RIGHT THUMB ZONE (In Mobile Landscape Mode): Dedicated Round Action Cluster */}
+      {isMobileLandscape && (
+        <div style={{
+          position: 'absolute',
+          bottom: 12,
+          right: 14,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 6,
+          zIndex: 25,
+          pointerEvents: 'auto',
+          touchAction: 'none'
+        }}>
+          {/* Reset Pill */}
           <button
-            onPointerDown={() => handleVirtualInput('turbo', true)}
-            onPointerUp={() => handleVirtualInput('turbo', false)}
+            onClick={handleReset}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              height: 26,
-              padding: '0 8px',
-              borderRadius: 8,
-              background: activeKeys['shift'] ? '#0284C7' : 'rgba(2, 132, 199, 0.25)',
-              border: '1px solid #0284C7',
-              color: '#FFF',
+              padding: '4px 10px',
+              borderRadius: 10,
+              background: 'rgba(15, 23, 42, 0.88)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              color: '#CBD5E1',
               fontSize: 10,
-              fontWeight: 700,
-              cursor: 'pointer',
-              letterSpacing: '0.04em'
+              fontWeight: 600,
+              cursor: 'pointer'
             }}
-            title="Sprint Turbo (Shift)"
           >
-            <Zap size={11} />
-            <span>TURBO</span>
+            <RotateCcw size={11} color="#34D399" />
+            <span>Reset Posisi</span>
           </button>
 
-          <button
-            onClick={handleJump}
-            style={{
-              height: 26,
-              padding: '0 10px',
-              borderRadius: 8,
-              background: 'rgba(5, 150, 105, 0.25)',
-              border: '1px solid #10B981',
-              color: '#34D399',
-              fontSize: 10,
-              fontWeight: 700,
-              cursor: 'pointer',
-              letterSpacing: '0.04em'
-            }}
-            title="Melompat (Spasi)"
-          >
-            JUMP
-          </button>
+          {/* Action Buttons Row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Turbo Sprint (Round Blue) */}
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('turbo', true); }}
+              onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('turbo', false); }}
+              onPointerLeave={() => handleVirtualInput('turbo', false)}
+              onPointerCancel={() => handleVirtualInput('turbo', false)}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: activeKeys['shift'] ? '#0284C7' : 'rgba(2, 132, 199, 0.35)',
+                border: '2px solid #38BDF8',
+                color: '#FFF',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(2, 132, 199, 0.4)',
+                touchAction: 'none'
+              }}
+              title="Turbo Sprint (Shift)"
+            >
+              <Zap size={16} />
+              <span style={{ fontSize: 8, fontWeight: 800 }}>TURBO</span>
+            </button>
 
+            {/* Acrobatic Spin (Round Rose) */}
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleSpin(); }}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(225, 29, 72, 0.35)',
+                border: '2px solid #FB7185',
+                color: '#FDA4AF',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(225, 29, 72, 0.4)',
+                touchAction: 'none'
+              }}
+              title="360 Spin (E)"
+            >
+              <Sparkles size={16} />
+              <span style={{ fontSize: 8, fontWeight: 800 }}>SPIN</span>
+            </button>
+
+            {/* Primary Jump (Large Round Emerald) */}
+            <button
+              onPointerDown={(e) => { e.preventDefault(); handleJump(); }}
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: '50%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(16, 185, 129, 0.45)',
+                border: '2.5px solid #34D399',
+                color: '#FFF',
+                cursor: 'pointer',
+                boxShadow: '0 6px 20px rgba(16, 185, 129, 0.5)',
+                touchAction: 'none'
+              }}
+              title="Melompat (Spasi)"
+            >
+              <ArrowUp size={22} color="#34D399" />
+              <span style={{ fontSize: 9, fontWeight: 900, color: '#A7F3D0' }}>LOMPAT</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DESKTOP RESET BUTTON (When NOT in mobile landscape mode) */}
+      {!isMobileLandscape && (
+        <div style={{
+          position: 'absolute',
+          bottom: showMiniMap ? (miniMapExpanded ? 260 : 195) : 24,
+          right: 24,
+          pointerEvents: 'auto',
+          zIndex: 15,
+          transition: 'bottom 0.2s ease'
+        }}>
           <button
-            onClick={handleSpin}
+            onClick={handleReset}
             style={{
-              height: 26,
-              padding: '0 8px',
-              borderRadius: 8,
-              background: 'rgba(225, 29, 72, 0.25)',
-              border: '1px solid #FB7185',
-              color: '#FDA4AF',
-              fontSize: 10,
-              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 14,
+              background: 'rgba(15, 23, 42, 0.90)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              color: '#E2E8F0',
+              fontSize: 11,
+              fontWeight: 600,
               cursor: 'pointer',
-              letterSpacing: '0.04em'
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              transition: 'all 0.2s'
             }}
-            title="360 Akrobatik Spin (E)"
+            title="Kembalikan karakter tomat ke pintu laboratorium (R)"
           >
-            SPIN
+            <RotateCcw size={13} color="#34D399" />
+            <span>Reset Posisi</span>
           </button>
         </div>
-      </div>
+      )}
 
-      {/* Bottom-Right: Reset Posisi Button (Docked cleanly above or in corner) */}
-      <div style={{
-        position: 'absolute',
-        bottom: showMiniMap ? (miniMapExpanded ? 260 : 195) : 24,
-        right: 24,
-        pointerEvents: 'auto',
-        zIndex: 15,
-        transition: 'bottom 0.2s ease'
-      }}>
-        <button
-          onClick={handleReset}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 14px',
-            borderRadius: 14,
-            background: 'rgba(15, 23, 42, 0.90)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255, 255, 255, 0.18)',
-            color: '#E2E8F0',
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: 'pointer',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-            transition: 'all 0.2s'
-          }}
-          title="Kembalikan karakter tomat ke pintu laboratorium (R)"
-        >
-          <RotateCcw size={13} color="#34D399" />
-          <span>Reset Posisi</span>
-        </button>
-      </div>
-
-      {/* Bottom-Right: 2D Canvas Radar Mini-Map */}
+      {/* 2D CANVAS RADAR MINI-MAP */}
       {showMiniMap && (
         <div style={{
           position: 'absolute',
-          bottom: 24,
-          right: 24,
+          // On mobile landscape: docked in top-right to preserve bottom-right for thumb actions!
+          top: isMobileLandscape ? 48 : 'auto',
+          bottom: isMobileLandscape ? 'auto' : 24,
+          right: isMobileLandscape ? 12 : 24,
           background: 'rgba(15, 23, 42, 0.92)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
-          padding: 8,
-          borderRadius: 20,
+          padding: 6,
+          borderRadius: 18,
           border: '1px solid rgba(52, 211, 153, 0.35)',
           boxShadow: '0 12px 36px rgba(0, 0, 0, 0.55)',
           pointerEvents: 'auto',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 6,
-          zIndex: 15
+          gap: 4,
+          zIndex: 22
         }}>
           {/* Radar Header Bar */}
           <div style={{
@@ -863,18 +1233,18 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             justifyContent: 'space-between',
             width: '100%',
             padding: '2px 4px',
-            fontSize: 10,
+            fontSize: 9,
             color: '#34D399',
             fontWeight: 700,
             letterSpacing: '0.08em',
             fontFamily: 'monospace'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Navigation size={11} color="#34D399" />
-              <span>RADAR 180M</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Navigation size={10} color="#34D399" />
+              <span>RADAR</span>
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ color: '#FCD34D', fontSize: 9 }}>
                 {remainingCollectibles} 🍅
               </span>
@@ -891,7 +1261,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
                 }}
                 title={miniMapExpanded ? 'Perkecil Radar' : 'Perbesar Radar'}
               >
-                {miniMapExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                {miniMapExpanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
               </button>
             </div>
           </div>
@@ -899,10 +1269,10 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
           {/* Radar 2D Viewport */}
           <canvas
             ref={radarCanvasRef}
-            width={miniMapExpanded ? 190 : 136}
-            height={miniMapExpanded ? 190 : 136}
+            width={isMobileLandscape ? (miniMapExpanded ? 140 : 96) : (miniMapExpanded ? 190 : 136)}
+            height={isMobileLandscape ? (miniMapExpanded ? 140 : 96) : (miniMapExpanded ? 190 : 136)}
             style={{
-              borderRadius: 14,
+              borderRadius: 12,
               display: 'block',
               cursor: 'crosshair'
             }}

@@ -259,7 +259,8 @@ export const App: React.FC = () => {
             border: '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: 24,
             overflow: 'hidden',
-            height: '580px',
+            height: 'clamp(420px, 80vh, 660px)',
+            minHeight: '380px',
             boxShadow: '0 14px 44px rgba(0, 0, 0, 0.45)',
             position: 'relative'
           }}>
