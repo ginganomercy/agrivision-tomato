@@ -24,6 +24,12 @@ class TestApiEndpoints:
         assert "swagger-ui" in response.text
         assert "Outfit" in response.text
 
+    def test_should_return_svg_favicon_when_requested(self, client):
+        response = client.get("/favicon.ico")
+        assert response.status_code == 200
+        assert "image/svg+xml" in response.headers["content-type"]
+        assert "🍅" in response.text
+
     def test_should_return_healthy_status_when_health_endpoint_called(self, client):
         response = client.get("/health")
         assert response.status_code == 200

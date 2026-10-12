@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Request
+from fastapi import FastAPI, File, UploadFile, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.exceptions import RequestValidationError
@@ -133,6 +133,17 @@ async def custom_swagger_docs():
     return HTMLResponse(
         content=render_swagger_docs_html(title="AgriVision API Docs", openapi_url="/openapi.json"),
         status_code=200
+    )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Mengembalikan icon favicon tomat SVG untuk mencegah error 404 di browser."""
+    svg_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🍅</text></svg>'
+    return Response(
+        content=svg_icon,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"}
     )
 
 
