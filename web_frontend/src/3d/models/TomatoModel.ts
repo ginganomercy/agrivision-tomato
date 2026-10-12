@@ -6,7 +6,9 @@
 import * as THREE from 'three';
 
 export class TomatoModel {
-  private group: THREE.Group;
+  private group: THREE.Group;               // Root group: world position (x,y,z) & heading (yaw)
+  private tiltGroup: THREE.Group;           // Local tilt group: local pitch & banking roll
+  private visualMeshGroup: THREE.Group;     // Visual animation group: squash, stretch, and hop stride
   private fruitMesh!: THREE.Mesh;
   private calyxGroup: THREE.Group;
   private stemGroup: THREE.Group;
@@ -15,6 +17,9 @@ export class TomatoModel {
   private eyesGroup: THREE.Group;
   
   // Animation state
+  public static readonly BASE_SCALE = 0.82;
+  private stridePhase: number = 0;
+  private idlePhase: number = 0;
   private blinkTimer: number = 0;
   private isBlinking: boolean = false;
   private stemSwayPhase: number = 0;
@@ -24,24 +29,29 @@ export class TomatoModel {
 
   constructor() {
     this.group = new THREE.Group();
+    this.tiltGroup = new THREE.Group();
+    this.visualMeshGroup = new THREE.Group();
     this.calyxGroup = new THREE.Group();
     this.stemGroup = new THREE.Group();
     this.leavesGroup = new THREE.Group();
     this.mascotGroup = new THREE.Group();
     this.eyesGroup = new THREE.Group();
 
+    this.group.add(this.tiltGroup);
+    this.tiltGroup.add(this.visualMeshGroup);
+
     this.buildTomatoBody();
     this.buildCalyxAndStem();
     this.buildDewDrops();
     this.buildMascotFace();
 
-    this.group.add(this.calyxGroup);
-    this.group.add(this.stemGroup);
-    this.group.add(this.leavesGroup);
-    this.group.add(this.mascotGroup);
+    this.visualMeshGroup.add(this.calyxGroup);
+    this.visualMeshGroup.add(this.stemGroup);
+    this.visualMeshGroup.add(this.leavesGroup);
+    this.visualMeshGroup.add(this.mascotGroup);
 
-    // Scale character to nimble, beloved mascot proportion (0.82x)
-    this.group.scale.set(0.82, 0.82, 0.82);
+    // Initial scale
+    this.visualMeshGroup.scale.set(TomatoModel.BASE_SCALE, TomatoModel.BASE_SCALE, TomatoModel.BASE_SCALE);
   }
 
   public getRoot(): THREE.Group {
@@ -102,7 +112,7 @@ export class TomatoModel {
     this.fruitMesh = new THREE.Mesh(geo, tomatoMat);
     this.fruitMesh.castShadow = true;
     this.fruitMesh.receiveShadow = true;
-    this.group.add(this.fruitMesh);
+    this.visualMeshGroup.add(this.fruitMesh);
   }
 
   /**
@@ -198,7 +208,7 @@ export class TomatoModel {
       this.disposables.push(dropGeo);
       const dropMesh = new THREE.Mesh(dropGeo, dewMat);
       dropMesh.position.copy(pos);
-      this.group.add(dropMesh);
+      this.visualMeshGroup.add(dropMesh);
     });
   }
 
@@ -270,25 +280,86 @@ export class TomatoModel {
     this.mascotGroup.visible = visible;
   }
 
-  public updateAnimation(deltaTime: number, velocityMag: number, isGrounded: boolean): void {
-    // 1. Dynamic Stem Sway based on movement velocity
-    this.stemSwayPhase += deltaTime * (4.0 + velocityMag * 6.0);
-    const swayAmplitude = isGrounded ? 0.08 + Math.min(velocityMag * 0.12, 0.25) : 0.22;
-    this.stemGroup.rotation.z = Math.sin(this.stemSwayPhase) * swayAmplitude;
-    this.leavesGroup.rotation.z = Math.sin(this.stemSwayPhase * 1.2) * (swayAmplitude * 1.3);
+  /**
+   * Updates all dynamic animations on the character:
+   * - Local banking tilt and acceleration pitch on tiltGroup
+   * - Organic mascot stride hop, idle breathing, and volume-conserving squash & stretch on visualMeshGroup
+   * - Dynamic harmonic stem spring inertia and secondary leaf flutter
+   * - Expressive eye blinking
+   */
+  public updateAnimation(
+    deltaTime: number,
+    velocityMag: number,
+    isGrounded: boolean,
+    velocityY: number = 0,
+    pitch: number = 0,
+    roll: number = 0
+  ): void {
+    // 1. Apply local directional tilt on tiltGroup (in character's local heading space)
+    this.tiltGroup.rotation.x = pitch;
+    this.tiltGroup.rotation.z = roll;
 
-    // 2. Eye Blinking Logic (every 3-5 seconds, blink for 0.12s)
+    // 2. Organic mascot stride hop and squash & stretch on visualMeshGroup
+    const baseScale = TomatoModel.BASE_SCALE;
+
+    if (!isGrounded) {
+      // Airborne kinematics (stretches along vertical velocity vector with volume conservation)
+      const stretch = THREE.MathUtils.clamp(1.0 + velocityY * 0.022, 0.82, 1.24);
+      const radScale = baseScale / Math.sqrt(stretch);
+      const vertScale = baseScale * stretch;
+      this.visualMeshGroup.scale.set(radScale, vertScale, radScale);
+      this.visualMeshGroup.position.set(0, 0, 0);
+      this.visualMeshGroup.rotation.z = 0;
+    } else if (velocityMag > 0.25) {
+      // Grounded locomotive stride hop (organic mascot running kinetics)
+      const strideRate = 8.5 + velocityMag * 0.75;
+      this.stridePhase += deltaTime * strideRate;
+
+      // Vertical rhythmic stride bounce (hop up and land on feet/bottom)
+      const hopHeight = Math.abs(Math.sin(this.stridePhase)) * Math.min(0.045, 0.015 + velocityMag * 0.0035);
+      this.visualMeshGroup.position.y = hopHeight;
+
+      // Subtle mascot side-to-side waddle sway
+      const waddleRoll = Math.sin(this.stridePhase) * Math.min(0.05, 0.018 + velocityMag * 0.003);
+      this.visualMeshGroup.rotation.z = waddleRoll;
+
+      // Harmonic volume-conserved squash on step touchdown
+      const squashFactor = Math.cos(this.stridePhase * 2.0) * Math.min(0.04, 0.012 + velocityMag * 0.003);
+      const scaleY = baseScale * (1.0 - squashFactor);
+      const scaleXZ = baseScale / Math.sqrt(Math.max(0.7, 1.0 - squashFactor));
+      this.visualMeshGroup.scale.set(scaleXZ, scaleY, scaleXZ);
+    } else {
+      // Idle state: gentle rhythmic resting breathing (1.6 Hz)
+      this.idlePhase += deltaTime * 2.4;
+      const breath = Math.sin(this.idlePhase) * 0.014;
+      const scaleY = baseScale * (1.0 - breath);
+      const scaleXZ = baseScale / Math.sqrt(1.0 - breath);
+      this.visualMeshGroup.scale.set(scaleXZ, scaleY, scaleXZ);
+      this.visualMeshGroup.position.set(0, 0, 0);
+      this.visualMeshGroup.rotation.z = 0;
+    }
+
+    // 3. Dynamic Stem Spring Inertia & Leaf Flexing
+    this.stemSwayPhase += deltaTime * (3.5 + velocityMag * 5.0);
+    const swayAmplitude = isGrounded ? 0.06 + Math.min(velocityMag * 0.08, 0.18) : 0.20;
+    // Counter-inertial stem reaction to pitch acceleration
+    const stemPitchInertia = -pitch * 0.45;
+    this.stemGroup.rotation.x = stemPitchInertia;
+    this.stemGroup.rotation.z = Math.sin(this.stemSwayPhase) * swayAmplitude - roll * 0.35;
+    this.leavesGroup.rotation.z = Math.sin(this.stemSwayPhase * 1.3) * (swayAmplitude * 1.25);
+
+    // 4. Expressive Mascot Eye Blinking
     this.blinkTimer += deltaTime;
-    if (!this.isBlinking && this.blinkTimer > 3.5) {
-      if (Math.random() < 0.3) {
+    if (!this.isBlinking && this.blinkTimer > 3.8) {
+      if (Math.random() < 0.35) {
         this.isBlinking = true;
         this.blinkTimer = 0;
       }
     }
 
     if (this.isBlinking) {
-      this.eyesGroup.scale.y = 0.15; // squint
-      if (this.blinkTimer > 0.14) {
+      this.eyesGroup.scale.y = 0.12; // squint
+      if (this.blinkTimer > 0.12) {
         this.eyesGroup.scale.y = 1.0;
         this.isBlinking = false;
         this.blinkTimer = 0;

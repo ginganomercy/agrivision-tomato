@@ -298,23 +298,18 @@ export class WorldEngine {
     const tomatoGroup = this.tomatoModel.getRoot();
     tomatoGroup.position.copy(state.position);
 
-    // Maintain Upright Heading Yaw & Banking Tilt (NO UPSIDE-DOWN ROTATION)
-    tomatoGroup.rotation.y = state.heading;
-    tomatoGroup.rotation.z = state.roll;
-    tomatoGroup.rotation.x = state.pitch;
+    // Root group maintains upright orientation with pure Heading Yaw (Y-axis only)
+    tomatoGroup.rotation.set(0, state.heading, 0);
 
-    // Squash & Stretch waddle based on vertical movement
-    if (!state.isGrounded) {
-      const stretch = THREE.MathUtils.clamp(1.0 + state.velocity.y * 0.02, 0.85, 1.25);
-      tomatoGroup.scale.set(1.0 / Math.sqrt(stretch), stretch, 1.0 / Math.sqrt(stretch));
-    } else {
-      // Gentle running waddle squish
-      const waddle = Math.sin(elapsedTime * 14.0) * (horizSpeed * 0.008);
-      tomatoGroup.scale.set(1.0 + waddle, 1.0 - waddle * 0.5, 1.0 + waddle);
-    }
-
-    // Character internal animations (stem sway, eye blinking)
-    this.tomatoModel.updateAnimation(deltaTime, horizSpeed, state.isGrounded);
+    // Character organic kinematics (local tilt pitch/roll, stride hop, squash/stretch, stem inertia, blinking)
+    this.tomatoModel.updateAnimation(
+      deltaTime,
+      horizSpeed,
+      state.isGrounded,
+      state.velocity.y,
+      state.pitch,
+      state.roll
+    );
 
     // 5. Update Collectibles & Collision
     this.collectibles.update(elapsedTime);

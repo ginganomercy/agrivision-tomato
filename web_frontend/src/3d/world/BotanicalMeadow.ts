@@ -515,10 +515,12 @@ export class BotanicalMeadow {
       bGroup.add(wingL);
       bGroup.add(wingR);
 
-      // Distribute in flower sanctuary and greenhouse entrance
-      const baseX = b < 5 ? -35 + (b - 2) * 6 : (b - 6) * 8;
-      const baseZ = b < 5 ? -35 + (b - 2) * 6 : 10 + (b - 6) * 4;
-      const baseY = 1.2 + (b % 3) * 0.4;
+      // Distribute all 8 butterflies across Zone 3: Wildflower Sanctuary (-35, -35)
+      const angle = (b / 8) * Math.PI * 2;
+      const dist = 5.0 + (b % 4) * 3.5;
+      const baseX = -35 + Math.cos(angle) * dist;
+      const baseZ = -35 + Math.sin(angle) * dist;
+      const baseY = 1.3 + (b % 3) * 0.35;
 
       bGroup.position.set(baseX, baseY, baseZ);
       this.group.add(bGroup);
@@ -530,8 +532,8 @@ export class BotanicalMeadow {
         baseX,
         baseZ,
         baseY,
-        radius: 3.5 + (b % 3) * 1.5,
-        speed: 1.2 + (b % 4) * 0.3,
+        radius: 2.8 + (b % 3) * 1.2,
+        speed: 1.1 + (b % 4) * 0.25,
         phase: b * 0.9
       });
     }

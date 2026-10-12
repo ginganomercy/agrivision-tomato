@@ -37,7 +37,7 @@ export class CharacterController {
   private static readonly JUMP_VELOCITY = 10.8;
   private static readonly BOUNDARY_LIMIT = 82.0; // 180m Open world perimeter boundary
 
-  constructor(initialPosition: THREE.Vector3 = new THREE.Vector3(0, 0.82, -1.0)) {
+  constructor(initialPosition: THREE.Vector3 = new THREE.Vector3(0, 0.86, -1.0)) {
     this.position.copy(initialPosition);
     this.heading = 0;
     this.targetHeading = 0;
@@ -92,7 +92,7 @@ export class CharacterController {
   }
 
   public resetPosition(): void {
-    this.position.set(0, 0.82, -1.0);
+    this.position.set(0, 0.86, -1.0);
     this.velocity.set(0, 0, 0);
     this.heading = 0;
     this.targetHeading = 0;
@@ -161,16 +161,16 @@ export class CharacterController {
     this.position.y += this.velocity.y * clampedDt;
 
     // Topographic Ground Elevation Calculation
-    let currentGroundY = 0.68;
+    let currentGroundY = 0.74; // Outdoor meadow terrain base
     if (isInsideGreenhouse) {
-      currentGroundY = 0.82; // Elevated terracotta laboratory floor
+      currentGroundY = 0.86; // Elevated terracotta laboratory floor
     } else {
       // Windmill Hill elevation (mound at x=38, z=40, radius 20m)
       const dxHill = (this.position.x - 38) / 20;
       const dzHill = (this.position.z - 40) / 20;
       const hillDistSq = dxHill * dxHill + dzHill * dzHill;
       if (hillDistSq < 1.0) {
-        currentGroundY = 0.68 + (1.0 - Math.sqrt(hillDistSq)) * 4.4;
+        currentGroundY = 0.74 + (1.0 - Math.sqrt(hillDistSq)) * 4.4;
       }
     }
 
