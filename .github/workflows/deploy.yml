@@ -91,14 +91,13 @@ jobs:
 
       - name: 📦 Package Clean Source Code Artifact
         run: |
-          tar --exclude='.git' \
+          tar --warning=no-file-changed \
               --exclude='node_modules' \
               --exclude='.pytest_cache' \
               --exclude='venv' \
               --exclude='__pycache__' \
               --exclude='*.pyc' \
-              --exclude='agrivision-payload.tar.gz' \
-              -czf agrivision-payload.tar.gz .
+              -czf agrivision-payload.tar.gz api_backend web_frontend requirements.txt
 
       - name: 🌐 Connect to Tailscale Network
         if: env.HAS_TAILSCALE == 'true'
