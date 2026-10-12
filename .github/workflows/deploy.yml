@@ -51,13 +51,12 @@ jobs:
           port: ${{ vars.SERVER_PORT || secrets.SERVER_PORT || '22' }}
           script_stop: true
           script: |
-            set -x
             set -e
 
             # 1. Bersihkan variabel dari karakter newline/CRLF bawaan Windows
             RAW_DIR="${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/opt/agrivision-tomato' }}"
             DEPLOY_DIR=$(echo "$RAW_DIR" | tr -d '\r\n ' | sed 's:/*$::')
-            [ -z "$DEPLOY_DIR" ] && DEPLOY_DIR="/opt/agrivision-tomato"
+            DEPLOY_DIR="${DEPLOY_DIR:-/opt/agrivision-tomato}"
             
             REPO_URL="https://github.com/ginganomercy/agrivision-tomato.git"
             export HF_TOKEN=$(echo "${{ secrets.HF_TOKEN }}" | tr -d '\r\n ')
@@ -68,7 +67,12 @@ jobs:
             echo "=========================================="
 
             # 2. Sinkronisasi Git secara fail-safe & self-healing
-            if [ "$EUID" -ne 0 ]; then sudo mkdir -p "$DEPLOY_DIR" && sudo chown -R $USER:$USER "$DEPLOY_DIR"; else mkdir -p "$DEPLOY_DIR"; fi
+            if [ "$EUID" -ne 0 ]; then
+              sudo mkdir -p "$DEPLOY_DIR"
+              sudo chown -R $USER:$USER "$DEPLOY_DIR"
+            else
+              mkdir -p "$DEPLOY_DIR"
+            fi
             cd "$DEPLOY_DIR"
             git config --global --add safe.directory "$DEPLOY_DIR" || true
 
@@ -77,46 +81,52 @@ jobs:
               git init
             fi
 
-            git remote remove origin 2>/dev/null || true
-            git remote add origin "$REPO_URL"
+            if git remote | grep -q "^origin$"; then
+              git remote set-url origin "$REPO_URL"
+            else
+              git remote add origin "$REPO_URL"
+            fi
 
             echo "[INFO] Menarik commit terbaru dari GitHub..."
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
 
-            # 2. Pindah ke direktori api_backend
+            # 3. Pindah ke direktori api_backend
             cd "$DEPLOY_DIR/api_backend"
 
-            # 3. Pastikan Docker Swarm aktif
+            # 4. Pastikan Docker Swarm aktif
             if ! docker info --format '{{.Swarm.LocalNodeState}}' | grep -q "active"; then
               echo "[INFO] Menginisialisasi Docker Swarm..."
               docker swarm init || true
             fi
 
-            # 4. Pastikan network front-tier ada
-            docker network inspect front-tier >/dev/null 2>&1 || docker network create --driver overlay --attachable front-tier
+            # 5. Pastikan network front-tier ada
+            if ! docker network inspect front-tier >/dev/null 2>&1; then
+              echo "[INFO] Membuat overlay network front-tier..."
+              docker network create --driver overlay --attachable front-tier
+            fi
 
-            # 5. Build Docker image API dengan dependensi CPU PyTorch terbaru
+            # 6. Build Docker image API dengan dependensi CPU PyTorch terbaru
             echo "[INFO] Membangun image Docker API..."
             docker build -t agrivision_api:latest .
 
-            # 6. Deploy Stack ke Docker Swarm
+            # 7. Deploy Stack ke Docker Swarm
             echo "[INFO] Menerapkan stack agrivision ke Docker Swarm..."
             docker stack deploy -c docker-compose.yml agrivision
 
-            # 6. Rolling update service API secara zero-downtime
+            # 8. Rolling update service API secara zero-downtime
             echo "[INFO] Menjalankan zero-downtime rolling update..."
             docker service update --force agrivision_api
 
-            # 7. Sinkronisasi konfigurasi Ingress ke /opt/priv-ingress/conf.d jika direktori ada
+            # 9. Sinkronisasi konfigurasi Ingress ke /opt/priv-ingress/conf.d jika direktori ada
             if [ -d "/opt/priv-ingress/conf.d" ]; then
               echo "[INFO] Menyinkronkan konfigurasi Ingress ke /opt/priv-ingress/conf.d/..."
               cp -f agrivision.pbjt.ac.id.conf /opt/priv-ingress/conf.d/
-              INGRESS_ID=$(docker ps -q -f name=priv-ingress_nginx || docker ps -q -f name=nginx || true)
+              INGRESS_ID=$(docker ps -q -f name=priv-ingress_nginx | head -n 1)
               if [ -n "$INGRESS_ID" ]; then
                 echo "[INFO] Me-reload Nginx Ingress..."
-                docker exec $INGRESS_ID nginx -s reload || true
+                docker exec "$INGRESS_ID" nginx -s reload || true
               fi
             fi
 
