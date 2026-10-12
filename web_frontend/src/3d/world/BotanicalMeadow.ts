@@ -58,6 +58,44 @@ export class BotanicalMeadow {
   }
 
   /**
+   * Evaluates exact procedural terrain elevation across the 180m open world.
+   * Shared by physics, terrain mesh generation, and stone pathway conformality.
+   */
+  public static getTerrainHeight(x: number, z: number): number {
+    // 1. Central greenhouse foundation depression to eliminate z-fighting with slab
+    if (Math.abs(x) < 10.5 && Math.abs(z) < 8.5) {
+      return -0.06;
+    }
+
+    // 2. South-West Irrigation Lake Basin excavation (x: -55 to -15, z: 15 to 55)
+    const dxLake = (x - (-35)) / 22;
+    const dzLake = (z - 35) / 22;
+    const lakeDistSq = dxLake * dxLake + dzLake * dzLake;
+    if (lakeDistSq < 1.0) {
+      return (1.0 - Math.sqrt(lakeDistSq)) * -0.65;
+    }
+
+    // 3. South-East Windmill Hill mound elevation (x: 18 to 55, z: 20 to 60)
+    const dxHill = (x - 38) / 20;
+    const dzHill = (z - 40) / 20;
+    const hillDistSq = dxHill * dxHill + dzHill * dzHill;
+    if (hillDistSq < 1.0) {
+      return (1.0 - Math.sqrt(hillDistSq)) * 4.5;
+    }
+
+    // 4. Perimeter Mountain Ridge around map edge (r > 68m)
+    const distFromCenter = Math.hypot(x, z);
+    if (distFromCenter > 68) {
+      const outerRise = Math.pow((distFromCenter - 68) / 18, 2) * 6.5;
+      const wave = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 1.5;
+      return outerRise + wave;
+    }
+
+    // 5. Gentle undulating agricultural terrain
+    return Math.sin(x * 0.05) * Math.cos(z * 0.05) * 0.35;
+  }
+
+  /**
    * Constructs procedurally contoured 180m terrain with lake basin and windmill hill
    */
   private buildExpansiveTerrain(): void {
@@ -69,46 +107,7 @@ export class BotanicalMeadow {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
-
-      // Central greenhouse foundation depression to eliminate z-fighting with slab
-      if (Math.abs(x) < 10.5 && Math.abs(z) < 8.5) {
-        pos.setY(i, -0.06);
-        continue;
-      }
-
-      // South-West Irrigation Lake Basin excavation (x: -55 to -15, z: 15 to 55)
-      const dxLake = (x - (-35)) / 22;
-      const dzLake = (z - 35) / 22;
-      const lakeDistSq = dxLake * dxLake + dzLake * dzLake;
-      if (lakeDistSq < 1.0) {
-        // Smooth crater basin down to -0.65m
-        const lakeDepth = (1.0 - Math.sqrt(lakeDistSq)) * -0.65;
-        pos.setY(i, lakeDepth);
-        continue;
-      }
-
-      // South-East Windmill Hill mound elevation (x: 18 to 55, z: 20 to 60)
-      const dxHill = (x - 38) / 20;
-      const dzHill = (z - 40) / 20;
-      const hillDistSq = dxHill * dxHill + dzHill * dzHill;
-      if (hillDistSq < 1.0) {
-        // Smooth elevated hill up to +4.5m
-        const hillElevation = (1.0 - Math.sqrt(hillDistSq)) * 4.5;
-        pos.setY(i, hillElevation);
-        continue;
-      }
-
-      // Perimeter Mountain Ridge around map edge (r > 70m)
-      const distFromCenter = Math.hypot(x, z);
-      if (distFromCenter > 68) {
-        const outerRise = Math.pow((distFromCenter - 68) / 18, 2) * 6.5;
-        const wave = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 1.5;
-        pos.setY(i, outerRise + wave);
-      } else {
-        // Gentle undulating agricultural terrain
-        const gentleRoll = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 0.35;
-        pos.setY(i, gentleRoll);
-      }
+      pos.setY(i, BotanicalMeadow.getTerrainHeight(x, z));
     }
 
     terrainGeo.computeVertexNormals();
@@ -183,12 +182,19 @@ export class BotanicalMeadow {
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a3d28, roughness: 0.8 });
     this.disposables.push(woodMat);
 
-    // Deck planks (length 10m, width 3m)
+    // Deck planks (length 9m, width 3.2m, centered at z = -14)
     const deck = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.15, 9.0), woodMat);
     deck.position.set(0, 0.1, -14);
     deck.castShadow = true;
     deck.receiveShadow = true;
     lakeGroup.add(deck);
+
+    // Wooden Shoreline Access Ramp connecting dry terrain to pier deck
+    const ramp = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.12, 3.6), woodMat);
+    ramp.position.set(0, 0.08, -19.5); // World pos: (-35, 0.08, 15.5)
+    ramp.castShadow = true;
+    ramp.receiveShadow = true;
+    lakeGroup.add(ramp);
 
     // Pier support posts
     [[-1.4, -17], [1.4, -17], [-1.4, -12], [1.4, -12], [-1.4, -10], [1.4, -10]].forEach(([postX, postZ]) => {
@@ -362,7 +368,7 @@ export class BotanicalMeadow {
   }
 
   /**
-   * Constructs stone pathways connecting all 5 zones
+   * Constructs stone pathways connecting all 5 zones with conformal terrain elevation
    */
   private buildGardenPathways(): void {
     const stoneMat = new THREE.MeshStandardMaterial({
@@ -374,45 +380,75 @@ export class BotanicalMeadow {
     });
     this.disposables.push(stoneMat);
 
-    const createPath = (points: THREE.Vector3[]) => {
+    const stoneGeo = new THREE.CylinderGeometry(0.75, 0.82, 0.05, 8);
+    this.disposables.push(stoneGeo);
+
+    const createPath = (points: THREE.Vector3[], pointCount = 36) => {
       const curve = new THREE.CatmullRomCurve3(points);
-      const curvePoints = curve.getPoints(32);
+      const curvePoints = curve.getPoints(pointCount);
 
       curvePoints.forEach((pt, idx) => {
-        const stone = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.75, 0.8, 0.04, 7),
-          stoneMat
-        );
-        stone.position.set(pt.x + (idx % 2 === 0 ? 0.2 : -0.2), 0.04, pt.z);
-        stone.rotation.y = idx * 0.7;
+        const posX = pt.x + (idx % 2 === 0 ? 0.18 : -0.18);
+        const posZ = pt.z;
+
+        // Invariant: Do not place stone inside lake water (lake center: (-35, 35), radius: 20m)
+        const distToLake = Math.hypot(posX - (-35), posZ - 35);
+        if (distToLake < 20.2 && !(Math.abs(posX - (-35)) < 1.8 && posZ <= 15.2)) {
+          return;
+        }
+
+        const groundY = BotanicalMeadow.getTerrainHeight(posX, posZ);
+        const stone = new THREE.Mesh(stoneGeo, stoneMat);
+        stone.position.set(posX, groundY + 0.035, posZ);
+        stone.rotation.y = idx * 0.72;
         stone.receiveShadow = true;
         this.group.add(stone);
       });
     };
 
-    // Path 1: Greenhouse to Trellis Rows (North-East)
+    // Path 1: Greenhouse to Trellis Rows (North-East Orchard)
     createPath([
       new THREE.Vector3(0, 0, 7.5),
-      new THREE.Vector3(12, 0, 0),
-      new THREE.Vector3(25, 0, -18),
-      new THREE.Vector3(35, 0, -30)
-    ]);
+      new THREE.Vector3(12, 0, 2),
+      new THREE.Vector3(24, 0, -14),
+      new THREE.Vector3(35, 0, -28)
+    ], 32);
 
-    // Path 2: Greenhouse to Irrigation Lake (South-West)
+    // Path 2: Greenhouse to Irrigation Lake Dock Ramp (South-West)
+    // Seamlessly connects to the wooden shore ramp at (-35, 14.2) without entering water!
     createPath([
       new THREE.Vector3(0, 0, 7.5),
-      new THREE.Vector3(-10, 0, 15),
-      new THREE.Vector3(-22, 0, 22),
-      new THREE.Vector3(-35, 0, 24)
-    ]);
+      new THREE.Vector3(-10, 0, 9.5),
+      new THREE.Vector3(-22, 0, 11.5),
+      new THREE.Vector3(-35, 0, 14.2)
+    ], 30);
 
     // Path 3: Greenhouse to Windmill Hill (South-East)
+    // Conforms cleanly to elevated hill slopes up to +4.2m
     createPath([
       new THREE.Vector3(0, 0, 7.5),
-      new THREE.Vector3(14, 0, 18),
-      new THREE.Vector3(26, 1.5, 28),
-      new THREE.Vector3(36, 4.0, 36)
-    ]);
+      new THREE.Vector3(14, 0, 16),
+      new THREE.Vector3(26, 1.8, 28),
+      new THREE.Vector3(36, 4.2, 38)
+    ], 34);
+
+    // Path 4: Greenhouse to Wildflower Sanctuary (North-West)
+    createPath([
+      new THREE.Vector3(0, 0, 7.5),
+      new THREE.Vector3(-12, 0, -6),
+      new THREE.Vector3(-24, 0, -18),
+      new THREE.Vector3(-35, 0, -32)
+    ], 32);
+
+    // Path 5: Scenic Lakeside Shoreline Promenade
+    // Follows the scenic dry grassy bank of the lake at r = 22.5m - 24m from lake center
+    createPath([
+      new THREE.Vector3(-35, 0, 13.5),
+      new THREE.Vector3(-24, 0, 16.0),
+      new THREE.Vector3(-14, 0, 26.0),
+      new THREE.Vector3(-13, 0, 38.0),
+      new THREE.Vector3(-17, 0, 49.0)
+    ], 36);
   }
 
   /**

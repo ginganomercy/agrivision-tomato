@@ -228,6 +228,10 @@ export class WorldEngine {
     }
   }
 
+  public getActiveCollectibles(): { x: number; z: number; points: number }[] {
+    return this.collectibles.getActivePositions();
+  }
+
   public resetCharacter(): void {
     this.controller.resetPosition();
     this.collectibles.resetAll();
@@ -274,6 +278,9 @@ export class WorldEngine {
     this.sunLight.position.set(state.position.x + 32, 45, state.position.z + 22);
     this.sunLight.target.position.copy(state.position);
     this.sunLight.target.updateMatrixWorld();
+
+    // 1c. Dispatch real-time coordinates and heading for HUD Radar Mini-Map
+    this.callbacks.onPlayerUpdate?.({ x: state.position.x, z: state.position.z }, state.heading);
 
     // 2. Dynamic 5-Zone Name Detection Callback
     const zoneName = this.controller.getZoneName(isInside);

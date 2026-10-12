@@ -24,6 +24,12 @@ export class CollectiblesManager {
     return this.items;
   }
 
+  public getActivePositions(): { x: number; z: number; points: number }[] {
+    return this.items
+      .filter(item => item.active)
+      .map(item => ({ x: item.position.x, z: item.position.z, points: item.points }));
+  }
+
   private spawnCollectibles(): void {
     // Shared gold physical material
     const goldMat = new THREE.MeshPhysicalMaterial({

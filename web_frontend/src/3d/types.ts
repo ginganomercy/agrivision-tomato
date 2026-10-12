@@ -9,6 +9,7 @@ export interface WorldCallbacks {
   onSpeedChange?: (speedPercent: number) => void;
   onBounce?: (bounceCount: number) => void;
   onZoneChange?: (zoneName: string) => void;
+  onPlayerUpdate?: (pos: { x: number; z: number }, heading: number) => void;
 }
 
 export interface InputState {
