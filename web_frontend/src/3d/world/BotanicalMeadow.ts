@@ -33,6 +33,10 @@ export class BotanicalMeadow {
   private particlePoints!: THREE.Points;
   private particlePositions!: Float32Array;
 
+  // Dynamic Tavern Entrance Door Hinge
+  private tavernDoorHingeGroup!: THREE.Group;
+  private tavernDoorRotation: number = 0;
+
   // Spatial boundaries (meters)
   public static readonly MEADOW_SIZE = 180; // 180x180m open world
   public static readonly BOUNDARY_RADIUS = 84.0;
@@ -502,14 +506,45 @@ export class BotanicalMeadow {
     plinth.receiveShadow = true;
     tavernGroup.add(plinth);
 
-    // 2. Main Tavern Hall Body (width 10.0m, depth 8.0m, height 5.0m, centered at z = 0)
-    const hallWallGeo = new THREE.BoxGeometry(10.0, 4.6, 8.0);
-    this.disposables.push(hallWallGeo);
-    const hallWalls = new THREE.Mesh(hallWallGeo, plasterWallMat);
-    hallWalls.position.set(0, 2.84, 0);
-    hallWalls.castShadow = true;
-    hallWalls.receiveShadow = true;
-    tavernGroup.add(hallWalls);
+    // 2. Main Tavern Hall Body (Hollow exterior shell with open doorway, width 10m, depth 8m, height 4.6m)
+    // Back North Wall
+    const wallNorth = new THREE.Mesh(new THREE.BoxGeometry(10.0, 4.6, 0.3), plasterWallMat);
+    wallNorth.position.set(0, 2.84, -3.85);
+    wallNorth.castShadow = true;
+    tavernGroup.add(wallNorth);
+
+    // West Side Wall
+    const wallWest = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 7.8), plasterWallMat);
+    wallWest.position.set(-4.85, 2.84, 0);
+    wallWest.castShadow = true;
+    tavernGroup.add(wallWest);
+
+    // East Side Wall
+    const wallEast = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 7.8), plasterWallMat);
+    wallEast.position.set(4.85, 2.84, 0);
+    wallEast.castShadow = true;
+    tavernGroup.add(wallEast);
+
+    // Front South Wall (Left panel, Right panel, leaving 1.6m open doorway in center)
+    const wallSouthL = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.6, 0.3), plasterWallMat);
+    wallSouthL.position.set(-2.9, 2.84, 3.85);
+    wallSouthL.castShadow = true;
+    tavernGroup.add(wallSouthL);
+
+    const wallSouthR = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.6, 0.3), plasterWallMat);
+    wallSouthR.position.set(2.9, 2.84, 3.85);
+    wallSouthR.castShadow = true;
+    tavernGroup.add(wallSouthR);
+
+    // Over-Door Timber Lintel
+    const doorLintel = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.8, 0.32), timberDarkMat);
+    doorLintel.position.set(0, 4.24, 3.85);
+    tavernGroup.add(doorLintel);
+
+    // Warm Interior Golden Spill Light (spilling warmly through doorway)
+    const interiorGlow = new THREE.PointLight(0xffaa33, 1.8, 8, 1.2);
+    interiorGlow.position.set(0, 2.2, 2.8);
+    tavernGroup.add(interiorGlow);
 
     // Half-timbered structural timber frame beams on exterior walls
     // Corner timber pillars
@@ -588,14 +623,33 @@ export class BotanicalMeadow {
     canopyRoof.castShadow = true;
     tavernGroup.add(canopyRoof);
 
-    // 6. Arched Main Tavern Doorway (at front wall z = 4.05)
+    // 6. Arched Main Tavern Doorway with Dynamic Hinged Swinging Door (at front wall z = 4.05)
     const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.8, 0.25), timberDarkMat);
     doorFrame.position.set(0, 1.95, 4.05);
     tavernGroup.add(doorFrame);
 
-    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.5, 0.15), timberDarkMat);
-    doorPanel.position.set(0, 1.95, 4.12);
-    tavernGroup.add(doorPanel);
+    // Hinge Pivot Group (Pivoting at left door jamb x = -0.65)
+    this.tavernDoorHingeGroup = new THREE.Group();
+    this.tavernDoorHingeGroup.position.set(-0.65, 0.7, 4.05);
+
+    // Door Leaf Mesh (Shifted +0.65 so it pivots cleanly on its left edge!)
+    const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.5, 0.12), timberDarkMat);
+    doorLeaf.position.set(0.65, 1.25, 0);
+    doorLeaf.castShadow = true;
+    this.tavernDoorHingeGroup.add(doorLeaf);
+
+    // Iron Band Strap Hinges & Ring Knocker
+    [-0.7, 0.7].forEach(hy => {
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.16), ironMat);
+      strap.position.set(0.48, 1.25 + hy, 0);
+      this.tavernDoorHingeGroup.add(strap);
+    });
+
+    const ironKnocker = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 6, 10), ironMat);
+    ironKnocker.position.set(1.0, 1.25, 0.08);
+    this.tavernDoorHingeGroup.add(ironKnocker);
+
+    tavernGroup.add(this.tavernDoorHingeGroup);
 
     // Warm Leaded Glass Windows with welcoming interior glow
     [-2.8, 2.8].forEach(wx => {
@@ -1376,6 +1430,33 @@ export class BotanicalMeadow {
       }
       this.particlePoints.geometry.attributes.position.needsUpdate = true;
     }
+  }
+
+  /**
+   * Updates Tavern Entrance Door Hinge Swing:
+   * When player stands on the front porch and approaches the door (within 2.4m),
+   * the door smoothly swings open inwards into the tavern!
+   * When player steps away, it smoothly closes back.
+   */
+  public updateTavernDoor(deltaTime: number, playerPos: THREE.Vector3): void {
+    if (!this.tavernDoorHingeGroup) return;
+
+    // Door world position: x = -14.0, z = 22.05 (tavernGroup at x=-14, z=18 + door at z=4.05)
+    const doorWorldPos = new THREE.Vector3(-14.0, 1.2, 22.05);
+    const distToDoor = playerPos.distanceTo(doorWorldPos);
+
+    // Check if player is on the porch approaching the door (x in [-16.0, -12.0], z in [22.0, 25.0])
+    let targetAngle = 0; // Default: firmly closed
+    if (distToDoor <= 2.5 && playerPos.z >= 22.0 && playerPos.z <= 25.2) {
+      targetAngle = -Math.PI * 0.48; // Swings open inwards (-86 degrees)
+    }
+
+    this.tavernDoorRotation = THREE.MathUtils.lerp(
+      this.tavernDoorRotation,
+      targetAngle,
+      Math.min(1.0, deltaTime * 6.0)
+    );
+    this.tavernDoorHingeGroup.rotation.y = this.tavernDoorRotation;
   }
 
   public dispose(): void {

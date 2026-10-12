@@ -5,7 +5,7 @@
  * and guarantees the stem stays oriented upright (never flips upside-down).
  */
 import * as THREE from 'three';
-import type { InputState, PhysicsState } from '../types';
+import type { InputState, PhysicsState, RoomLocation } from '../types';
 import { BotanicalMeadow } from '../world/BotanicalMeadow';
 
 export class CharacterController {
@@ -127,7 +127,7 @@ export class CharacterController {
   public update(
     deltaTime: number,
     input: InputState,
-    isInsideGreenhouse: boolean,
+    currentRoom: RoomLocation,
     camForward: THREE.Vector3,
     camRight: THREE.Vector3
   ): { state: PhysicsState; justBounced: boolean; justLanded: boolean } {
@@ -190,10 +190,12 @@ export class CharacterController {
     this.velocity.y += CharacterController.GRAVITY * clampedDt;
     this.position.y += this.velocity.y * clampedDt;
 
-    // Multi-Level Surface Elevation Calculation (Terrain + Windmill Stairs/Terrace + Tavern + Pier)
+    // Multi-Level Surface Elevation Calculation (Terrain + Greenhouse + Spacious Guild Tavern + Lake Bridge)
     let currentGroundY = 0.74; // Outdoor meadow terrain base
-    if (isInsideGreenhouse) {
+    if (currentRoom === 'greenhouse') {
       currentGroundY = 0.86; // Elevated terracotta laboratory floor
+    } else if (currentRoom === 'tavern') {
+      currentGroundY = -39.16; // Solid grand polished oak floor in spacious Guild Tavern (-39.90 + 0.74)
     } else {
       // Accurately conform to multi-level architectural structures (no sinking!)
       currentGroundY = BotanicalMeadow.getSurfaceElevation(this.position.x, this.position.z) + 0.74;
@@ -222,7 +224,7 @@ export class CharacterController {
     this.position.z += this.velocity.z * clampedDt;
 
     // 5. Environmental Collisions & Boundary Clamping
-    this.handleCollisions(isInsideGreenhouse);
+    this.handleCollisions(currentRoom);
 
     // 6. Upright Heading Yaw & Banking Tilt (Faces actual movement vector)
     if (horizontalSpeed > 0.3) {
@@ -265,13 +267,14 @@ export class CharacterController {
       isBoosting,
       bounceCount: this.bounceCount,
       score: this.score,
-      currentZone: this.getZoneName(isInsideGreenhouse)
+      currentZone: this.getZoneName(currentRoom)
     };
 
     return { state, justBounced, justLanded };
   }
 
-  private handleCollisions(isInsideGreenhouse: boolean): void {
+  private handleCollisions(currentRoom: RoomLocation): void {
+    const isInsideGreenhouse = currentRoom === 'greenhouse';
     const limit = CharacterController.BOUNDARY_LIMIT;
 
     // Outer 180m perimeter boundary clamp
@@ -411,41 +414,95 @@ export class CharacterController {
       }
     }
 
-    // 4. Agri-Guild Tavern Solid Collision (Center: x=-14, z=18)
-    // Tavern Hall Box: x in [-19.0, -9.0], z in [13.8, 22.2]
-    const tMinX = -19.75;
-    const tMaxX = -8.25;
-    const tMinZ = 13.05;
-    const tMaxZ = 22.85;
-    if (
-      this.position.x > tMinX && this.position.x < tMaxX &&
-      this.position.z > tMinZ && this.position.z < tMaxZ
-    ) {
-      // Push out to the closest outer face
-      const distWest = this.position.x - tMinX;
-      const distEast = tMaxX - this.position.x;
-      const distNorth = this.position.z - tMinZ;
-      const distSouth = tMaxZ - this.position.z;
-      const minDist = Math.min(distWest, distEast, distNorth, distSouth);
+    // 4. Agri-Guild Tavern Solid Collision Handling
+    if (currentRoom === 'tavern') {
+      // INSIDE SPACIOUS GUILD TAVERN & BOUNTY HALL (24m x 18m, Center x = -14.0, z = 18.0)
+      // Room perimeter clamps: X in [-24.8, -3.2], Z in [10.2, 25.8]
+      if (this.position.x < -24.8) { this.position.x = -24.8; this.velocity.x *= -0.2; }
+      if (this.position.x > -3.2)  { this.position.x = -3.2;  this.velocity.x *= -0.2; }
+      if (this.position.z < 10.2)  { this.position.z = 10.2;  this.velocity.z *= -0.2; }
 
-      if (minDist === distSouth) {
-        this.position.z = tMaxZ + 0.05;
-        this.velocity.z = Math.max(0, this.velocity.z);
-      } else if (minDist === distWest) {
-        this.position.x = tMinX - 0.05;
-        this.velocity.x = Math.min(0, this.velocity.x);
-      } else if (minDist === distEast) {
-        this.position.x = tMaxX + 0.05;
+      // South exit doorway: opening is at |x - (-14)| <= 1.2
+      // If outside the exit door opening width, clamp inside south wall z = 25.8
+      const inExitDoor = Math.abs(this.position.x - (-14.0)) <= 1.2;
+      if (!inExitDoor && this.position.z > 25.8) {
+        this.position.z = 25.8;
+        this.velocity.z *= -0.2;
+      }
+
+      // Interior Bar Counter collision (West side, x < -21.0, z in [13.0, 23.0])
+      if (this.position.x < -21.0 && this.position.z >= 13.0 && this.position.z <= 23.0) {
+        this.position.x = -20.9;
         this.velocity.x = Math.max(0, this.velocity.x);
-      } else {
-        this.position.z = tMinZ - 0.05;
-        this.velocity.z = Math.min(0, this.velocity.z);
+      }
+
+      // Interior Walk-In Fireplace hearth collision (East wall, x > -4.8, z in [16.0, 20.0])
+      if (this.position.x > -4.8 && this.position.z >= 16.0 && this.position.z <= 20.0) {
+        this.position.x = -4.85;
+        this.velocity.x = Math.min(0, this.velocity.x);
+      }
+
+      // Ceiling headroom clamp in tavern
+      if (this.position.y > -33.2) {
+        this.position.y = -33.2;
+        this.velocity.y = Math.min(0, this.velocity.y);
+      }
+    } else {
+      // OUTSIDE ON MEADOW / PORCH (Center: x = -14, z = 18)
+      // Tavern Hall Exterior Box: x in [-19.0, -9.0], z in [13.8, 22.0]
+      const tMinX = -19.75;
+      const tMaxX = -8.25;
+      const tMinZ = 13.05;
+      const tMaxZ = 22.35; // Front wall at z = 22.0 + 0.35m
+
+      if (
+        this.position.x > tMinX && this.position.x < tMaxX &&
+        this.position.z > tMinZ && this.position.z < tMaxZ
+      ) {
+        // Doorway corridor on front porch: allow approaching and entering the door!
+        // Door is centered at x = -14.0, z = 22.05
+        const inDoorway = Math.abs(this.position.x - (-14.0)) <= 1.2 && this.position.z >= 21.6;
+        if (!inDoorway) {
+          const distWest = this.position.x - tMinX;
+          const distEast = tMaxX - this.position.x;
+          const distNorth = this.position.z - tMinZ;
+          const distSouth = tMaxZ - this.position.z;
+          const minDist = Math.min(distWest, distEast, distNorth, distSouth);
+
+          if (minDist === distSouth) {
+            this.position.z = tMaxZ + 0.05;
+            this.velocity.z = Math.max(0, this.velocity.z);
+          } else if (minDist === distWest) {
+            this.position.x = tMinX - 0.05;
+            this.velocity.x = Math.min(0, this.velocity.x);
+          } else if (minDist === distEast) {
+            this.position.x = tMaxX + 0.05;
+            this.velocity.x = Math.max(0, this.velocity.x);
+          } else {
+            this.position.z = tMinZ - 0.05;
+            this.velocity.z = Math.min(0, this.velocity.z);
+          }
+        }
+      }
+
+      // Porch Canopy Ceiling Headroom Clamp (prevents jumping onto canopy roof!)
+      // Porch is at x in [-19.2, -8.8], z in [22.0, 25.6]
+      if (
+        this.position.x >= -19.2 && this.position.x <= -8.8 &&
+        this.position.z >= 22.0 && this.position.z <= 25.6
+      ) {
+        if (this.position.y > 2.85) {
+          this.position.y = 2.85;
+          this.velocity.y = Math.min(0, this.velocity.y);
+        }
       }
     }
   }
 
-  public getZoneName(isInsideGreenhouse: boolean): string {
-    if (isInsideGreenhouse) return 'Ruang Laboratorium Botani';
+  public getZoneName(currentRoom: RoomLocation): string {
+    if (currentRoom === 'greenhouse') return 'Ruang Laboratorium Botani';
+    if (currentRoom === 'tavern') return 'Aula Utama Serikat Tani (Guild Hall)';
+    if (currentRoom === 'windmill') return 'Menara Observasi Kincir Angin';
     const distToLake = Math.hypot(this.position.x - (-35), this.position.z - 35);
     if (distToLake <= 4.45) return 'Paviliun Gazebo Teratai (Danau Irigasi)';
     if (Math.abs(this.position.x - (-35)) <= 2.05 && this.position.z >= 13.2 && this.position.z <= 56.8) {

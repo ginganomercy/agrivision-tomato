@@ -13,6 +13,7 @@ import { CollectiblesManager } from '../world/CollectiblesManager';
 import { MonsterManager } from '../world/MonsterManager';
 import { CharacterController } from '../controller/CharacterController';
 import { InventoryManager } from '../world/InventoryManager';
+import { GuildTavernInterior } from '../world/GuildTavernInterior';
 
 export class WorldEngine {
   // Core Three.js components
@@ -33,6 +34,7 @@ export class WorldEngine {
   private monsters: MonsterManager;
   private controller: CharacterController;
   private inventory: InventoryManager;
+  private tavernInterior: GuildTavernInterior;
 
   // State
   private inputState: InputState = {
@@ -100,6 +102,7 @@ export class WorldEngine {
     this.monsters = new MonsterManager();
     this.tomatoModel = new TomatoModel();
     this.controller = new CharacterController();
+    this.tavernInterior = new GuildTavernInterior();
 
     // 4b. Initialize Inventory System & Wire Callbacks
     this.inventory = new InventoryManager(
@@ -123,6 +126,7 @@ export class WorldEngine {
     // Add to Scene
     this.scene.add(this.meadow.getRoot());
     this.scene.add(this.greenhouse.getRoot());
+    this.scene.add(this.tavernInterior.getRoot());
     this.scene.add(this.collectibles.getRoot());
     this.scene.add(this.monsters.getRoot());
     this.scene.add(this.tomatoModel.getRoot());
@@ -370,7 +374,8 @@ export class WorldEngine {
       if (targetRoom === 'greenhouse') {
         this.controller.warpTo(0, 0.1, 4.6, Math.PI); // facing North inside
       } else if (targetRoom === 'tavern') {
-        this.controller.warpTo(-14, 0.45, 17.8, Math.PI); // inside tavern floor
+        // Warp player inside spacious 24x18m Guild Tavern floor (-39.16), facing North into the hall
+        this.controller.warpTo(-14.0, -39.16, 24.5, Math.PI);
       } else if (targetRoom === 'windmill') {
         this.controller.warpTo(38, 6.2, 40.0, -Math.PI * 0.75); // balcony deck
       } else {
@@ -378,7 +383,8 @@ export class WorldEngine {
         if (prevRoom === 'greenhouse') {
           this.controller.warpTo(0, 0.1, 8.8, 0); // facing South
         } else if (prevRoom === 'tavern') {
-          this.controller.warpTo(-14, 0.28, 24.8, 0); // on porch facing South
+          // Warp player back to porch deck outside Tavern facing South onto garden path
+          this.controller.warpTo(-14.0, 1.24, 23.6, 0);
         } else if (prevRoom === 'windmill') {
           this.controller.warpTo(38, 0.1, 33.8, 0); // ground
         } else {
@@ -449,11 +455,6 @@ export class WorldEngine {
     const elapsedTime = this.clock.getElapsedTime();
 
     // 1. Update Kinematics Controller
-    const isInside = this.greenhouse.isInside(
-      this.controller.getPosition().x,
-      this.controller.getPosition().z
-    );
-
     // Camera-relative forward & right horizontal vectors for natural intuitive controls
     const camForward = new THREE.Vector3();
     this.camera.getWorldDirection(camForward);
@@ -467,7 +468,7 @@ export class WorldEngine {
     const { state, justBounced } = this.controller.update(
       deltaTime,
       this.inputState,
-      isInside,
+      this.currentRoom,
       camForward,
       camRight
     );
@@ -485,8 +486,8 @@ export class WorldEngine {
         if (Math.abs(pos.x) <= 1.6 && pos.z <= 6.8 && pos.z >= 5.8) {
           this.startRoomTransition('greenhouse');
         }
-        // Agri-Guild Tavern porch front door
-        else if (pos.x >= -16.2 && pos.x <= -11.8 && pos.z <= 22.8 && pos.z >= 21.6) {
+        // Agri-Guild Tavern porch front door (walk through swung open door)
+        else if (Math.abs(pos.x - (-14.0)) <= 1.2 && pos.z <= 22.3 && pos.z >= 21.6) {
           this.startRoomTransition('tavern');
         }
         // Windmill base observation stairs
@@ -499,8 +500,8 @@ export class WorldEngine {
           this.startRoomTransition('meadow');
         }
       } else if (this.currentRoom === 'tavern') {
-        // Exiting Tavern door onto porch
-        if (pos.x >= -16.2 && pos.x <= -11.8 && pos.z >= 22.4) {
+        // Exiting Tavern interior through swung open south door
+        if (Math.abs(pos.x - (-14.0)) <= 1.2 && pos.z >= 25.8) {
           this.startRoomTransition('meadow');
         }
       } else if (this.currentRoom === 'windmill') {
@@ -520,7 +521,7 @@ export class WorldEngine {
     this.callbacks.onPlayerUpdate?.({ x: state.position.x, z: state.position.z }, state.heading);
 
     // 2. Dynamic 5-Zone Name Detection Callback
-    const zoneName = this.controller.getZoneName(isInside);
+    const zoneName = this.controller.getZoneName(this.currentRoom);
     if (zoneName !== this.currentZoneName) {
       this.currentZoneName = zoneName;
       this.callbacks.onZoneChange?.(zoneName);
@@ -580,11 +581,13 @@ export class WorldEngine {
       }
     }
 
-    // 6. Update Meadow Living Ecosystem (Windmill, butterflies, clouds, spores)
+    // 6. Update Meadow Living Ecosystem, Animated Doors & Tavern Interior
     this.meadow.update(deltaTime, elapsedTime);
+    this.meadow.updateTavernDoor(deltaTime, state.position);
+    this.tavernInterior.update(deltaTime, state.position);
 
     // 7. Update Camera Posture with adaptive distance
-    this.updateCamera(state.position, state.heading, isInside);
+    this.updateCamera(state.position, state.heading, this.currentRoom);
 
     // 8. Render Frame
     if (this.renderer) {
@@ -592,11 +595,18 @@ export class WorldEngine {
     }
   };
 
-  private updateCamera(targetPos: THREE.Vector3, targetHeading: number, isInside: boolean): void {
+  private updateCamera(targetPos: THREE.Vector3, targetHeading: number, currentRoom: RoomLocation): void {
     if (this.cameraMode === 'chase') {
-      // Adaptive Chase Camera (6.4m in greenhouse, 8.6m in wide open world)
-      const camDist = isInside ? 6.4 : 8.6;
-      const camHeight = isInside ? 3.0 : 3.8;
+      // Adaptive Chase Camera (6.4m in greenhouse, 6.8m in grand tavern, 8.6m in wide open world)
+      let camDist = 8.6;
+      let camHeight = 3.8;
+      if (currentRoom === 'greenhouse') {
+        camDist = 6.4;
+        camHeight = 3.0;
+      } else if (currentRoom === 'tavern') {
+        camDist = 6.8;
+        camHeight = 3.2;
+      }
       const behindX = targetPos.x - Math.sin(targetHeading) * camDist;
       const behindZ = targetPos.z - Math.cos(targetHeading) * camDist;
 
@@ -639,6 +649,7 @@ export class WorldEngine {
     this.audioSynth.dispose();
     this.greenhouse.dispose();
     this.meadow.dispose();
+    this.tavernInterior.dispose();
     this.collectibles.dispose();
     this.monsters.dispose();
     this.tomatoModel.dispose();
