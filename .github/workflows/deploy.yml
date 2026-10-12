@@ -1,37 +1,78 @@
-name: 🚀 Deploy AgriVision to Bare-Metal Server (Docker Swarm)
+name: 🚀 AgriVision CI/CD Pipeline (Build, Test & Deploy)
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
+  # =========================================================================
+  # STAGE 1: 🧪 Automated Testing & Code Quality Gate
+  # =========================================================================
   test:
-    name: 🧪 Run Smoke & Syntax Tests
+    name: 🧪 Run Automated Tests & Flake8 Linter
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: 🐍 Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: "pip"
 
-      - name: Install Linting & Smoke Test Tools
+      - name: 📦 Install Testing & ML Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest
+          python -m pip install --upgrade pip setuptools wheel
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r api_backend/requirements.txt
+          pip install flake8 pytest httpx pytest-mock
 
-      - name: Syntax Check with Flake8
+      - name: 🔍 Static Code Analysis (Flake8)
         run: |
-          # Stop the build if there are Python syntax errors or undefined names
-          flake8 api_backend/src --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Hentikan pipeline jika ada syntax errors atau undefined names (E9, F63, F7, F82)
+          flake8 api_backend/src api_backend/tests --count --select=E9,F63,F7,F82 --show-source --statistics
 
-  deploy:
-    name: 🚢 Deploy to Bare-Metal Server
+      - name: 🧪 Execute Unit & Integration Test Suite (Pytest)
+        run: |
+          pytest api_backend/tests -v --tb=short
+
+  # =========================================================================
+  # STAGE 2: 🐳 Docker Container Build & Artifact Verification
+  # =========================================================================
+  build:
+    name: 🐳 Verify Docker Build & Container Integrity
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🏗️ Build Docker Image (Dry-Run / Cache Validation)
+        uses: docker/build-push-action@v5
+        with:
+          context: api_backend
+          file: api_backend/Dockerfile
+          push: false
+          tags: agrivision_api:validation
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # =========================================================================
+  # STAGE 3: 🚢 Zero-Downtime Deployment to Bare-Metal Server (Docker Swarm)
+  # =========================================================================
+  deploy:
+    name: 🚢 Deploy to Bare-Metal Server (Docker Swarm)
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       HAS_TAILSCALE: ${{ secrets.TAILSCALE_AUTHKEY != '' }}
@@ -115,9 +156,18 @@ jobs:
             echo "[INFO] Menerapkan stack agrivision ke Docker Swarm..."
             docker stack deploy -c docker-compose.yml agrivision
 
-            # 8. Beri jeda untuk booting service dan periksa log
-            echo "[INFO] Menunggu service aktif dan memverifikasi log..."
-            sleep 15
+            # 8. Loop Verifikasi Kesiapan (Readiness Probe)
+            echo "[INFO] Menunggu service aktif dan melewati healthcheck..."
+            for i in $(seq 1 12); do
+              RUNNING_COUNT=$(docker service ls --filter name=agrivision_api --format '{{.Replicas}}' | cut -d'/' -f1 || echo "0")
+              if [ "$RUNNING_COUNT" = "2" ]; then
+                echo "[INFO] Sukses: 2/2 Replicas sudah Running dan Healthy!"
+                break
+              fi
+              echo "[WAIT] Menunggu replika siap ($i/12)..."
+              sleep 5
+            done
+
             docker service ps agrivision_api || true
             docker service logs --tail 30 agrivision_api || true
 
@@ -134,6 +184,8 @@ jobs:
 
               INGRESS_ID=$(docker ps -q -f name=priv-ingress_nginx | head -n 1)
               if [ -n "$INGRESS_ID" ]; then
+                echo "[INFO] Memverifikasi sintaks Nginx Ingress..."
+                docker exec "$INGRESS_ID" nginx -t || sudo docker exec "$INGRESS_ID" nginx -t || true
                 echo "[INFO] Me-reload Nginx Ingress..."
                 docker exec "$INGRESS_ID" nginx -s reload || sudo docker exec "$INGRESS_ID" nginx -s reload || true
               fi
