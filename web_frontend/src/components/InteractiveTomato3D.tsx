@@ -60,6 +60,11 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   const [isTiltEnabled, setIsTiltEnabled] = useState<boolean>(false);
   const tiltSteerRef = useRef<number>(0);
 
+  // Agricultural Pest Combat Quest States
+  const [questDefeated, setQuestDefeated] = useState<number>(0);
+  const [isQuestCompleted, setIsQuestCompleted] = useState<boolean>(false);
+  const [showQuestCelebration, setShowQuestCelebration] = useState<boolean>(false);
+
   // 1. Detect Screen Orientation, Touch Capability, and Size Changes
   useEffect(() => {
     const handleViewportChange = () => {
@@ -228,6 +233,14 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         },
         onPlayerUpdate: (pos, heading) => {
           playerCoordsRef.current = { x: pos.x, z: pos.z, heading };
+        },
+        onQuestUpdate: (defeated) => {
+          setQuestDefeated(defeated);
+        },
+        onQuestComplete: () => {
+          setIsQuestCompleted(true);
+          setShowQuestCelebration(true);
+          setTimeout(() => setShowQuestCelebration(false), 5500);
         }
       }
     });
@@ -250,7 +263,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         engine.triggerJump();
       }
       if (key === 'shift') engine.setInput('turbo', true);
-      if (key === 'e') engine.triggerSpin();
+      if (key === 'e' || key === 'f') engine.triggerSpin();
       if (key === 'r') {
         engine.resetCharacter();
         setRemainingCollectibles(engine.getActiveCollectibles().length);
@@ -824,6 +837,80 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
         </div>
       </div>
 
+      {/* 📜 Bounty Quest HUD Tracker */}
+      <div style={{
+        position: 'absolute',
+        top: isMobileLandscape ? 44 : 54,
+        left: 12,
+        background: 'rgba(15, 23, 42, 0.88)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        border: isQuestCompleted ? '1px solid #10B981' : '1px solid rgba(245, 158, 11, 0.6)',
+        borderRadius: 12,
+        padding: '5px 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        boxShadow: isQuestCompleted ? '0 4px 16px rgba(16, 185, 129, 0.3)' : '0 4px 16px rgba(0, 0, 0, 0.4)',
+        zIndex: 22,
+        pointerEvents: 'none',
+        maxWidth: 280
+      }}>
+        <span style={{ fontSize: 16 }}>{isQuestCompleted ? '🏆' : '⚔️'}</span>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={{
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: '0.6px',
+            color: isQuestCompleted ? '#34D399' : '#FBBF24',
+            textTransform: 'uppercase'
+          }}>
+            {isQuestCompleted ? 'Bounty Tani Tuntas' : 'Bounty: Basmi Hama Kebun'}
+          </span>
+          <span style={{ fontSize: 11, color: '#E2E8F0', fontWeight: 600 }}>
+            {questDefeated} / 5 Hama Dikalahkan
+          </span>
+        </div>
+        {/* Progress Bar */}
+        <div style={{ width: 44, height: 6, background: '#334155', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{
+            width: `${(questDefeated / 5) * 100}%`,
+            height: '100%',
+            background: isQuestCompleted ? 'linear-gradient(90deg, #10B981, #34D399)' : 'linear-gradient(90deg, #F59E0B, #FBBF24)',
+            transition: 'width 0.3s ease'
+          }} />
+        </div>
+      </div>
+
+      {/* 🎉 Quest Complete Celebration Banner */}
+      {showQuestCelebration && (
+        <div style={{
+          position: 'absolute',
+          top: '25%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '2px solid #6EE7B7',
+          borderRadius: 20,
+          padding: '16px 28px',
+          color: '#FFFFFF',
+          textAlign: 'center',
+          boxShadow: '0 20px 60px rgba(16, 185, 129, 0.6), 0 0 40px rgba(255, 255, 255, 0.3)',
+          zIndex: 40,
+          pointerEvents: 'none'
+        }}>
+          <div style={{ fontSize: 28, marginBottom: 4 }}>🎉 🏆 🍅</div>
+          <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: '0.5px' }}>
+            BOUNTY QUEST COMPLETED!
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.95, marginTop: 4 }}>
+            Seluruh 5 Hama Kebun Berhasil Dihalau • +500 Bonus Skor
+          </div>
+        </div>
+      )}
+
       {/* Floating Tilt Horizon Level Indicator (When Sensor Miring is active) */}
       {isTiltEnabled && (
         <div style={{
@@ -1194,10 +1281,10 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
                 boxShadow: '0 4px 14px rgba(225, 29, 72, 0.35)',
                 touchAction: 'none'
               }}
-              title="360 Spin (E)"
+              title="Serang Hama / Putar Spin (E / F)"
             >
               <Sparkles size={16} />
-              <span style={{ fontSize: 8, fontWeight: 800 }}>SPIN</span>
+              <span style={{ fontSize: 7.5, fontWeight: 800 }}>SERANG</span>
             </button>
 
             {/* Primary Jump (Large Round Emerald) */}

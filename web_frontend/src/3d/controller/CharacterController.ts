@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import type { InputState, PhysicsState } from '../types';
+import { BotanicalMeadow } from '../world/BotanicalMeadow';
 
 export class CharacterController {
   // Spatial vectors
@@ -91,6 +92,10 @@ export class CharacterController {
     return false;
   }
 
+  public getIsSpinning(): boolean {
+    return this.isSpinning;
+  }
+
   public resetPosition(): void {
     this.position.set(0, 0.86, -1.0);
     this.velocity.set(0, 0, 0);
@@ -160,18 +165,13 @@ export class CharacterController {
     this.velocity.y += CharacterController.GRAVITY * clampedDt;
     this.position.y += this.velocity.y * clampedDt;
 
-    // Topographic Ground Elevation Calculation
+    // Multi-Level Surface Elevation Calculation (Terrain + Windmill Stairs/Terrace + Tavern + Pier)
     let currentGroundY = 0.74; // Outdoor meadow terrain base
     if (isInsideGreenhouse) {
       currentGroundY = 0.86; // Elevated terracotta laboratory floor
     } else {
-      // Windmill Hill elevation (mound at x=38, z=40, radius 20m)
-      const dxHill = (this.position.x - 38) / 20;
-      const dzHill = (this.position.z - 40) / 20;
-      const hillDistSq = dxHill * dxHill + dzHill * dzHill;
-      if (hillDistSq < 1.0) {
-        currentGroundY = 0.74 + (1.0 - Math.sqrt(hillDistSq)) * 4.4;
-      }
+      // Accurately conform to multi-level architectural structures (no sinking!)
+      currentGroundY = BotanicalMeadow.getSurfaceElevation(this.position.x, this.position.z) + 0.74;
     }
 
     if (this.position.y <= currentGroundY) {
@@ -285,10 +285,26 @@ export class CharacterController {
       }
     }
 
-    // Lake Shoreline Soft-Push Collision (Center x=-35, z=35, radius 19.5m)
-    // Allows standing on wooden observation pier at x in [-37, -33], z in [20, 29]
+    // 1. Greenhouse Furnishings Collision (Workbenches inside laboratory)
+    if (isInsideGreenhouse) {
+      // Left Workbench: x in [-8.2, -4.8], z in [-3.2, -1.8]
+      if (this.position.x > -8.5 && this.position.x < -4.5 && this.position.z > -3.5 && this.position.z < -1.5) {
+        if (this.position.z > -2.5) this.position.z = -1.45;
+        else this.position.z = -3.55;
+        this.velocity.z *= -0.2;
+      }
+      // Right Workbench: x in [4.8, 8.2], z in [-3.2, -1.8]
+      if (this.position.x > 4.5 && this.position.x < 8.5 && this.position.z > -3.5 && this.position.z < -1.5) {
+        if (this.position.z > -2.5) this.position.z = -1.45;
+        else this.position.z = -3.55;
+        this.velocity.z *= -0.2;
+      }
+    }
+
+    // 2. Lake Shoreline Soft-Push Collision (Center x=-35, z=35, radius 19.5m)
+    // Allows standing on wooden observation pier at x in [-37, -33], z in [14, 29.5]
     const distToLake = Math.hypot(this.position.x - (-35), this.position.z - 35);
-    const isOnPier = this.position.x >= -37.5 && this.position.x <= -32.5 && this.position.z >= 19.0 && this.position.z <= 29.5;
+    const isOnPier = this.position.x >= -37.2 && this.position.x <= -32.8 && this.position.z >= 13.5 && this.position.z <= 29.5;
     if (distToLake < 19.2 && !isOnPier) {
       const angle = Math.atan2(this.position.z - 35, this.position.x - (-35));
       this.position.x = -35 + Math.cos(angle) * 19.3;
@@ -297,14 +313,63 @@ export class CharacterController {
       this.velocity.z *= -0.3;
     }
 
-    // Windmill Tower Core Solid Collision (Center x=38, z=40, tower stone radius 2.9m)
+    // 3. Windmill Tower Solid Anti-Clipping Collision (Center x=38, z=40)
+    // Tower stone base radius: 2.25m. Character radius: 0.75m. Minkowski sum: 3.00m
     const distToWindmill = Math.hypot(this.position.x - 38, this.position.z - 40);
-    if (distToWindmill < 2.95) {
+    if (distToWindmill < 3.02) {
       const angle = Math.atan2(this.position.z - 40, this.position.x - 38);
-      this.position.x = 38 + Math.cos(angle) * 3.0;
-      this.position.z = 40 + Math.sin(angle) * 3.0;
-      this.velocity.x *= -0.3;
-      this.velocity.z *= -0.3;
+      this.position.x = 38 + Math.cos(angle) * 3.05;
+      this.position.z = 40 + Math.sin(angle) * 3.05;
+      this.velocity.x *= -0.2;
+      this.velocity.z *= -0.2;
+    }
+
+    // Terrace Railing Collision: When on elevated terrace, prevent falling through railing except at steps
+    if (this.position.y >= 5.35 && distToWindmill > 3.95 && distToWindmill < 4.8) {
+      const angle = Math.atan2(this.position.z - 40, this.position.x - 38);
+      const stairAngle = -Math.PI * 0.75;
+      let diffAngle = Math.abs(angle - stairAngle);
+      if (diffAngle > Math.PI) diffAngle = Math.PI * 2 - diffAngle;
+
+      // If not facing the open stairs opening (diffAngle >= 0.42), clamp inside railing
+      if (diffAngle >= 0.42) {
+        this.position.x = 38 + Math.cos(angle) * 3.92;
+        this.position.z = 40 + Math.sin(angle) * 3.92;
+        this.velocity.x *= -0.2;
+        this.velocity.z *= -0.2;
+      }
+    }
+
+    // 4. Agri-Guild Tavern Solid Collision (Center: x=-14, z=18)
+    // Tavern Hall Box: x in [-19.0, -9.0], z in [13.8, 22.2]
+    const tMinX = -19.75;
+    const tMaxX = -8.25;
+    const tMinZ = 13.05;
+    const tMaxZ = 22.85;
+    if (
+      this.position.x > tMinX && this.position.x < tMaxX &&
+      this.position.z > tMinZ && this.position.z < tMaxZ
+    ) {
+      // Push out to the closest outer face
+      const distWest = this.position.x - tMinX;
+      const distEast = tMaxX - this.position.x;
+      const distNorth = this.position.z - tMinZ;
+      const distSouth = tMaxZ - this.position.z;
+      const minDist = Math.min(distWest, distEast, distNorth, distSouth);
+
+      if (minDist === distSouth) {
+        this.position.z = tMaxZ + 0.05;
+        this.velocity.z = Math.max(0, this.velocity.z);
+      } else if (minDist === distWest) {
+        this.position.x = tMinX - 0.05;
+        this.velocity.x = Math.min(0, this.velocity.x);
+      } else if (minDist === distEast) {
+        this.position.x = tMaxX + 0.05;
+        this.velocity.x = Math.max(0, this.velocity.x);
+      } else {
+        this.position.z = tMinZ - 0.05;
+        this.velocity.z = Math.min(0, this.velocity.z);
+      }
     }
   }
 
@@ -312,6 +377,7 @@ export class CharacterController {
     if (isInsideGreenhouse) return 'Ruang Laboratorium Botani';
     if (this.position.x > 15 && this.position.z < -10) return 'Kebun Tomat Komersial (Trellis)';
     if (this.position.x < -15 && this.position.z < -10) return 'Taman Bunga & Polinator';
+    if (this.position.x < -7 && this.position.x > -21 && this.position.z > 11 && this.position.z < 26) return 'Kedai Serikat Tani (Agri-Guild Tavern)';
     if (this.position.x < -15 && this.position.z > 12) return 'Danau Irigasi Botani';
     if (this.position.x > 15 && this.position.z > 15) return 'Bukit Kincir Angin & Kebun Buah';
     return 'Hamparan Padang Rumput Hijau';

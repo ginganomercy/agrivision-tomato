@@ -3,7 +3,7 @@
  * Uses Web Audio API to generate dynamic acoustic feedback for 3D interactions.
  * Fully decoupled from React lifecycle.
  */
-export type SoundEffectType = 'boing' | 'collect' | 'boost' | 'spin';
+export type SoundEffectType = 'boing' | 'collect' | 'boost' | 'spin' | 'hit' | 'defeat' | 'fanfare';
 
 export class AudioSynth {
   private ctx: AudioContext | null = null;
@@ -99,6 +99,48 @@ export class AudioSynth {
         gain.connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.33);
+      } else if (type === 'hit') {
+        // Punchy cartoon hit thump with pitch drop
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.18);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.20);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.21);
+      } else if (type === 'defeat') {
+        // Cheerful cartoon pop & defeated squish
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.14);
+        gain.gain.setValueAtTime(0.24, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.27);
+      } else if (type === 'fanfare') {
+        // Triumphal victory brass fanfare arpeggio
+        const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51]; // C5, E5, G5, C6, E6
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const noteStart = now + idx * 0.08;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, noteStart);
+          gain.gain.setValueAtTime(0.22, noteStart);
+          gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.45);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(noteStart);
+          osc.stop(noteStart + 0.46);
+        });
       }
     } catch {
       // Audio autoplay policy or hardware suspended - non-blocking

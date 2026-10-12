@@ -43,6 +43,7 @@ export class BotanicalMeadow {
 
     this.buildExpansiveTerrain();
     this.buildIrrigationLake();
+    this.buildGuildTavern();
     this.buildWindmillHill();
     this.buildCommercialTrellisRows();
     this.buildWildflowerPollinatorSanctuary();
@@ -93,6 +94,61 @@ export class BotanicalMeadow {
 
     // 5. Gentle undulating agricultural terrain
     return Math.sin(x * 0.05) * Math.cos(z * 0.05) * 0.35;
+  }
+
+  /**
+   * Computes exact solid surface elevation including elevated architectural structures:
+   * 1. Windmill Hill Terrace & Stepped Arrival Stairs (y = 4.12m to 4.78m)
+   * 2. Agri-Guild Tavern Foundation, Porch Deck & Steps (y = 0.28m to 0.54m)
+   * 3. Lake Observation Pier Deck & Sloped Shore Ramp (y = 0.08m to 0.18m)
+   * 4. Base natural terrain elevation (falls back to getTerrainHeight)
+   * Solves character sinking/clipping into stone floors and stairs.
+   */
+  public static getSurfaceElevation(x: number, z: number): number {
+    // 1. Windmill Hill Terrace & Arrival Steps (Center: x=38, z=40)
+    const distToWindmill = Math.hypot(x - 38, z - 40);
+    if (distToWindmill <= 4.45) {
+      const dx = x - 38;
+      const dz = z - 40;
+      // Local coordinates in arrivalGroup (rotated by -3*PI/4)
+      const angle = -Math.PI * 0.75;
+      const localX = dx * Math.cos(angle) - dz * Math.sin(angle);
+      const localZ = dx * Math.sin(angle) + dz * Math.cos(angle);
+
+      // Check 3 stepped arrival stone stairs
+      if (Math.abs(localX) <= 1.6) {
+        if (localZ >= 5.0 && localZ <= 6.3) return 4.23; // Step 3
+        if (localZ >= 4.2 && localZ < 5.0) return 4.45;  // Step 2
+        if (localZ >= 3.4 && localZ < 4.2) return 4.67;  // Step 1
+      }
+
+      // Circular Flagstone Terrace Floor
+      if (distToWindmill <= 4.15) {
+        return 4.78; // Terrace floor top surface
+      }
+    }
+
+    // 2. Agri-Guild Tavern & Sheltered Porch (Center: x=-14, z=18)
+    // Tavern Hall: x in [-19.5, -8.5], z in [13.5, 22.0] -> floor at y = 0.54
+    // Tavern Porch: x in [-19.5, -8.5], z in [22.0, 25.5] -> floor at y = 0.50
+    // Porch Steps: x in [-16.0, -12.0], z in [25.5, 26.8] -> step at y = 0.28
+    if (x >= -20.0 && x <= -8.0 && z >= 13.0 && z <= 27.0) {
+      if (z >= 13.5 && z <= 22.0) return 0.54; // Inside Tavern Hall
+      if (z > 22.0 && z <= 25.5) return 0.50;  // Front Porch Deck
+      if (z > 25.5 && z <= 26.8 && Math.abs(x - (-14)) <= 2.2) return 0.28; // Porch Step
+    }
+
+    // 3. Lake Observation Pier Deck & Shore Ramp (Center: x=-35)
+    // Dock extends into lake: x in [-36.8, -33.2], z in [14.0, 29.0]
+    if (Math.abs(x - (-35)) <= 1.9 && z >= 14.0 && z <= 29.0) {
+      if (z >= 18.5) return 0.18; // Flat wooden pier deck
+      // Sloped Shore Ramp: slopes from 0.08 at z=14.0 to 0.18 at z=18.5
+      const rampProgress = (z - 14.0) / 4.5;
+      return 0.08 + rampProgress * 0.10;
+    }
+
+    // Default to natural procedural terrain elevation
+    return BotanicalMeadow.getTerrainHeight(x, z);
   }
 
   /**
@@ -206,6 +262,209 @@ export class BotanicalMeadow {
   }
 
   /**
+   * Constructs South-West Agri-Guild Tavern & Bounty Hall (Center: x=-14, z=18)
+   * Features:
+   * 1. Deep Sub-Surface Stone Foundation Plinth (anchored 1.2m deep into ground)
+   * 2. Traditional Half-Timbered Medieval/Pastoral Tavern Architecture (cream plaster & dark oak timbers)
+   * 3. Cedar Shingle Double-Pitch Gable Roof with stone chimney & smoke puffs
+   * 4. Sheltered Front Porch with carved posts, cider barrels, picnic bench & hanging lanterns
+   * 5. Carved hanging wooden sign: "AGRI-GUILD TAVERN"
+   * 6. Interactive Bounty Notice Board for pest monster quests
+   */
+  private buildGuildTavern(): void {
+    const tavernGroup = new THREE.Group();
+    // Located in scenic South-West meadow: x = -14, z = 18
+    tavernGroup.position.set(-14, 0, 18);
+
+    // Tavern Material Palette
+    const stonePlinthMat = new THREE.MeshStandardMaterial({ color: 0x484239, roughness: 0.95 });
+    const plasterWallMat = new THREE.MeshStandardMaterial({ color: 0xe8dfce, roughness: 0.85 });
+    const timberDarkMat = new THREE.MeshStandardMaterial({ color: 0x3a2213, roughness: 0.8 });
+    const cedarRoofMat = new THREE.MeshStandardMaterial({ color: 0x5a341b, roughness: 0.75 });
+    const woodDeckMat = new THREE.MeshStandardMaterial({ color: 0x6e4727, roughness: 0.8 });
+    const warmGlassMat = new THREE.MeshStandardMaterial({ color: 0xffd166, roughness: 0.2, metalness: 0.3, emissive: 0xff9800, emissiveIntensity: 0.4 });
+    const ironMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.4 });
+    const barrelWoodMat = new THREE.MeshStandardMaterial({ color: 0x543217, roughness: 0.7 });
+    const parchmentMat = new THREE.MeshStandardMaterial({ color: 0xf5eed9, roughness: 0.9 });
+    const lanternGlowMat = new THREE.MeshStandardMaterial({ color: 0xffe082, emissive: 0xffb300, emissiveIntensity: 0.9 });
+
+    this.disposables.push(
+      stonePlinthMat, plasterWallMat, timberDarkMat, cedarRoofMat, woodDeckMat,
+      warmGlassMat, ironMat, barrelWoodMat, parchmentMat, lanternGlowMat
+    );
+
+    // 1. Deep Sub-Surface Foundation Plinth (width 11.5m, depth 13.5m, sinks 1.2m deep into ground)
+    const plinthGeo = new THREE.BoxGeometry(11.5, 1.8, 13.5);
+    this.disposables.push(plinthGeo);
+    const plinth = new THREE.Mesh(plinthGeo, stonePlinthMat);
+    plinth.position.set(0, -0.36, 1.8); // Top surface at y = 0.54
+    plinth.receiveShadow = true;
+    tavernGroup.add(plinth);
+
+    // 2. Main Tavern Hall Body (width 10.0m, depth 8.0m, height 5.0m, centered at z = 0)
+    const hallWallGeo = new THREE.BoxGeometry(10.0, 4.6, 8.0);
+    this.disposables.push(hallWallGeo);
+    const hallWalls = new THREE.Mesh(hallWallGeo, plasterWallMat);
+    hallWalls.position.set(0, 2.84, 0);
+    hallWalls.castShadow = true;
+    hallWalls.receiveShadow = true;
+    tavernGroup.add(hallWalls);
+
+    // Half-timbered structural timber frame beams on exterior walls
+    // Corner timber pillars
+    [[-4.9, -3.9], [4.9, -3.9], [-4.9, 3.9], [4.9, 3.9]].forEach(([bx, bz]) => {
+      const cornerPost = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 0.3), timberDarkMat);
+      cornerPost.position.set(bx, 2.84, bz);
+      cornerPost.castShadow = true;
+      tavernGroup.add(cornerPost);
+    });
+
+    // Horizontal sill and top timber plates
+    [0.6, 5.1].forEach(hy => {
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.22, 8.2), timberDarkMat);
+      plate.position.set(0, hy, 0);
+      tavernGroup.add(plate);
+    });
+
+    // 3. Gable Cedar Shingle Roof (Stepped A-frame pitch, apex at y = 7.6m)
+    const roofL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 4.2, 9.4), cedarRoofMat);
+    roofL.position.set(-2.8, 6.2, 0);
+    roofL.rotation.z = 0.65;
+    roofL.castShadow = true;
+    tavernGroup.add(roofL);
+
+    const roofR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 4.2, 9.4), cedarRoofMat);
+    roofR.position.set(2.8, 6.2, 0);
+    roofR.rotation.z = -0.65;
+    roofR.castShadow = true;
+    tavernGroup.add(roofR);
+
+    // Roof Ridge Beam
+    const ridgeBeam = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 9.6), timberDarkMat);
+    ridgeBeam.position.set(0, 7.5, 0);
+    tavernGroup.add(ridgeBeam);
+
+    // Gable triangular wall infills
+    const gableFront = new THREE.Mesh(new THREE.ConeGeometry(5.0, 2.4, 4), plasterWallMat);
+    gableFront.position.set(0, 6.2, 4.0);
+    gableFront.rotation.y = Math.PI / 4;
+    tavernGroup.add(gableFront);
+
+    // 4. Stone Chimney with warm hearth smoke (East side of tavern at x = 4.6)
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(1.4, 8.2, 1.4), stonePlinthMat);
+    chimney.position.set(4.6, 4.2, -1.5);
+    chimney.castShadow = true;
+    tavernGroup.add(chimney);
+
+    const chimneyPot = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 0.9, 8), timberDarkMat);
+    chimneyPot.position.set(4.6, 8.6, -1.5);
+    tavernGroup.add(chimneyPot);
+
+    // 5. Sheltered Front Porch (width 10.0m, depth 3.6m, spans z: 4.0 to 7.6)
+    const porchDeck = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.16, 3.6), woodDeckMat);
+    porchDeck.position.set(0, 0.50, 5.8);
+    porchDeck.receiveShadow = true;
+    tavernGroup.add(porchDeck);
+
+    // Front Porch Arrival Steps (descending to ground at z = 7.9)
+    const porchStep = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.22, 1.2), stonePlinthMat);
+    porchStep.position.set(0, 0.28, 7.8);
+    porchStep.receiveShadow = true;
+    tavernGroup.add(porchStep);
+
+    // Porch carved timber posts (4 posts along front at z = 7.4)
+    [-4.6, -1.5, 1.5, 4.6].forEach(px => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.8, 0.2), timberDarkMat);
+      post.position.set(px, 1.9, 7.4);
+      post.castShadow = true;
+      tavernGroup.add(post);
+    });
+
+    // Porch Canopy Roof (sloping forward from tavern wall)
+    const canopyRoof = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.16, 3.8), cedarRoofMat);
+    canopyRoof.position.set(0, 3.4, 5.8);
+    canopyRoof.rotation.x = 0.22;
+    canopyRoof.castShadow = true;
+    tavernGroup.add(canopyRoof);
+
+    // 6. Arched Main Tavern Doorway (at front wall z = 4.05)
+    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.8, 0.25), timberDarkMat);
+    doorFrame.position.set(0, 1.95, 4.05);
+    tavernGroup.add(doorFrame);
+
+    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.5, 0.15), timberDarkMat);
+    doorPanel.position.set(0, 1.95, 4.12);
+    tavernGroup.add(doorPanel);
+
+    // Warm Leaded Glass Windows with welcoming interior glow
+    [-2.8, 2.8].forEach(wx => {
+      const winFrame = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.6, 0.2), timberDarkMat);
+      winFrame.position.set(wx, 2.3, 4.05);
+      tavernGroup.add(winFrame);
+
+      const winGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.3), warmGlassMat);
+      winGlass.position.set(wx, 2.3, 4.16);
+      tavernGroup.add(winGlass);
+    });
+
+    // Brass Wall Lanterns with warm glow
+    [-1.2, 1.2].forEach(lx => {
+      const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.35, 0.2), lanternGlowMat);
+      lantern.position.set(lx, 2.8, 4.3);
+      tavernGroup.add(lantern);
+    });
+
+    // 7. Hanging Tavern Signboard: "AGRI-GUILD TAVERN"
+    const signGallows = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 1.2), timberDarkMat);
+    signGallows.position.set(2.4, 3.3, 7.5);
+    tavernGroup.add(signGallows);
+
+    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.8, 1.2), timberDarkMat);
+    signBoard.position.set(2.4, 2.7, 7.5);
+    signBoard.castShadow = true;
+    tavernGroup.add(signBoard);
+
+    // 8. Interactive Bounty Notice Board on Porch (Standing at x = -3.2, z = 6.2)
+    const boardEaselL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.0, 0.1), timberDarkMat);
+    boardEaselL.position.set(-3.7, 1.5, 6.2);
+    tavernGroup.add(boardEaselL);
+
+    const boardEaselR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.0, 0.1), timberDarkMat);
+    boardEaselR.position.set(-2.7, 1.5, 6.2);
+    tavernGroup.add(boardEaselR);
+
+    const boardPanel = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.1, 0.1), timberDarkMat);
+    boardPanel.position.set(-3.2, 1.65, 6.2);
+    tavernGroup.add(boardPanel);
+
+    // Pinned Bounty Quest Parchment (Glowing softly)
+    const questParchment = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), parchmentMat);
+    questParchment.position.set(-3.2, 1.65, 6.27);
+    tavernGroup.add(questParchment);
+
+    // 9. Outdoor Tavern Furnishings: Cider Barrels & Picnic Tables
+    // 3 Oak Cider Barrels stacked at West porch corner
+    [[-4.2, 5.0, 0], [-4.2, 6.0, 0], [-4.2, 5.5, 0.85]].forEach(([bx, bz, by]) => {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.44, 0.95, 10), barrelWoodMat);
+      barrel.position.set(bx, 1.05 + by, bz);
+      barrel.castShadow = true;
+      tavernGroup.add(barrel);
+    });
+
+    // Picnic Bench on East Porch
+    const tableTop = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 0.9), woodDeckMat);
+    tableTop.position.set(3.4, 1.25, 6.0);
+    tableTop.castShadow = true;
+    tavernGroup.add(tableTop);
+
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.35), woodDeckMat);
+    bench.position.set(3.4, 0.95, 6.7);
+    tavernGroup.add(bench);
+
+    this.group.add(tavernGroup);
+  }
+
+  /**
    * Constructs South-East Dutch Heritage Windmill Hill
    * Features:
    * 1. Deep Sub-Surface Masonry Foundation Plinth (anchored 2.8m deep into hill slopes, 0% floating)
@@ -243,7 +502,7 @@ export class BotanicalMeadow {
     // 1. DEEP SUB-SURFACE FOUNDATION PLINTH (Anchored from y = 1.0m to 4.2m)
     // At hill radius 4.5m, terrain surface is y = 3.48m. Base at y = 1.0m sinks 2.48m deep!
     // ─────────────────────────────────────────────────────────────────────────────
-    const subPlinthGeo = new THREE.CylinderGeometry(4.5, 4.8, 3.2, 16);
+    const subPlinthGeo = new THREE.CylinderGeometry(4.6, 4.9, 3.2, 16);
     this.disposables.push(subPlinthGeo);
     const subPlinth = new THREE.Mesh(subPlinthGeo, subStoneMat);
     subPlinth.position.y = 2.4; // Spans y: 0.8m to 4.0m
@@ -251,15 +510,15 @@ export class BotanicalMeadow {
     hillGroup.add(subPlinth);
 
     // Terrace Upper Plinth & Curb (Spans y: 3.9m to 4.7m)
-    const terracePlinthGeo = new THREE.CylinderGeometry(3.9, 4.3, 0.8, 16);
+    const terracePlinthGeo = new THREE.CylinderGeometry(4.2, 4.6, 0.8, 16);
     this.disposables.push(terracePlinthGeo);
     const terracePlinth = new THREE.Mesh(terracePlinthGeo, terraceStoneMat);
     terracePlinth.position.y = 4.3;
     terracePlinth.receiveShadow = true;
     hillGroup.add(terracePlinth);
 
-    // Flagstone Terrace Floor Slab (top at y = 4.72m)
-    const terraceFloorGeo = new THREE.CylinderGeometry(3.8, 3.8, 0.12, 16);
+    // Flagstone Terrace Floor Slab (Radius 4.15m, top face at y = 4.78m)
+    const terraceFloorGeo = new THREE.CylinderGeometry(4.15, 4.15, 0.14, 16);
     this.disposables.push(terraceFloorGeo);
     const terraceFloor = new THREE.Mesh(terraceFloorGeo, terraceStoneMat);
     terraceFloor.position.y = 4.72;
@@ -276,9 +535,9 @@ export class BotanicalMeadow {
 
     // 3 Curved Stone Arrival Steps descending from y = 4.7m down to 4.0m
     [
-      { width: 2.2, height: 0.22, depth: 1.0, y: 4.56, z: 3.9 },
-      { width: 2.5, height: 0.22, depth: 1.0, y: 4.34, z: 4.7 },
-      { width: 2.8, height: 0.22, depth: 1.1, y: 4.12, z: 5.5 }
+      { width: 2.4, height: 0.22, depth: 1.0, y: 4.56, z: 3.8 },
+      { width: 2.7, height: 0.22, depth: 1.0, y: 4.34, z: 4.6 },
+      { width: 3.0, height: 0.22, depth: 1.1, y: 4.12, z: 5.4 }
     ].forEach(st => {
       const stepGeo = new THREE.BoxGeometry(st.width, st.height, st.depth);
       this.disposables.push(stepGeo);
@@ -289,15 +548,15 @@ export class BotanicalMeadow {
     });
     hillGroup.add(arrivalGroup);
 
-    // Terrace Perimeter Wooden Railing (Leaving 2.6m opening for arrival steps)
-    const railPostCount = 12;
-    const railRadius = 3.65;
+    // Terrace Perimeter Wooden Railing (Radius 4.0m, leaving 2.8m opening for steps)
+    const railPostCount = 14;
+    const railRadius = 4.02;
     for (let r = 0; r < railPostCount; r++) {
       const pAngle = (r / railPostCount) * Math.PI * 2;
       // Skip posts across the doorway / arrival stairs sector (near arrivalAngle)
       let diffAngle = Math.abs(pAngle - (arrivalAngle + Math.PI * 2) % (Math.PI * 2));
       if (diffAngle > Math.PI) diffAngle = Math.PI * 2 - diffAngle;
-      if (diffAngle < 0.45) continue;
+      if (diffAngle < 0.42) continue;
 
       const px = Math.cos(pAngle) * railRadius;
       const pz = Math.sin(pAngle) * railRadius;
@@ -318,9 +577,9 @@ export class BotanicalMeadow {
     hillGroup.add(railRing);
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // 3. OCTAGONAL LOWER STONE TOWER (Spans y: 4.7m to 9.8m)
+    // 3. OCTAGONAL LOWER STONE TOWER (Base radius 2.2m for wide 1.8m terrace walkway!)
     // ─────────────────────────────────────────────────────────────────────────────
-    const towerGeo = new THREE.CylinderGeometry(2.3, 2.9, 5.1, 8);
+    const towerGeo = new THREE.CylinderGeometry(1.8, 2.25, 5.1, 8);
     this.disposables.push(towerGeo);
     const tower = new THREE.Mesh(towerGeo, towerStoneMat);
     tower.position.y = 7.25;
@@ -328,36 +587,36 @@ export class BotanicalMeadow {
     tower.receiveShadow = true;
     hillGroup.add(tower);
 
-    // Arched Timber Entrance Doorway (Facing North-West towards player path)
+    // Arched Timber Entrance Doorway (Facing North-West towards arrival steps)
     const doorGroup = new THREE.Group();
     doorGroup.rotation.y = arrivalAngle;
 
     // Door Frame
-    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.3, 0.28), timberDarkMat);
-    doorFrame.position.set(0, 5.85, 2.65);
+    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.3, 0.25), timberDarkMat);
+    doorFrame.position.set(0, 5.85, 2.15);
     doorGroup.add(doorFrame);
 
     // Wooden Door Panel
-    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.1, 0.16), timberCedarMat);
-    doorPanel.position.set(0, 5.85, 2.73);
+    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.1, 0.15), timberCedarMat);
+    doorPanel.position.set(0, 5.85, 2.22);
     doorGroup.add(doorPanel);
 
-    // Iron Door Handle & Cross-brace
+    // Iron Door Handle
     const doorKnob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), ironMat);
-    doorKnob.position.set(0.38, 5.85, 2.82);
+    doorKnob.position.set(0.38, 5.85, 2.30);
     doorGroup.add(doorKnob);
 
     // Wall Lantern next to doorway
     const lanternBracket = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.25, 0.35), ironMat);
-    lanternBracket.position.set(0.85, 6.25, 2.65);
+    lanternBracket.position.set(0.85, 6.25, 2.15);
     doorGroup.add(lanternBracket);
 
     const lanternCage = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.32, 0.2), ironMat);
-    lanternCage.position.set(0.85, 6.15, 2.9);
+    lanternCage.position.set(0.85, 6.15, 2.38);
     doorGroup.add(lanternCage);
 
     const lanternBulb = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), lanternGlowMat);
-    lanternBulb.position.set(0.85, 6.15, 2.9);
+    lanternBulb.position.set(0.85, 6.15, 2.38);
     doorGroup.add(lanternBulb);
 
     hillGroup.add(doorGroup);

@@ -10,6 +10,7 @@ import { TomatoModel } from '../models/TomatoModel';
 import { GreenhousePavilion } from '../world/GreenhousePavilion';
 import { BotanicalMeadow } from '../world/BotanicalMeadow';
 import { CollectiblesManager } from '../world/CollectiblesManager';
+import { MonsterManager } from '../world/MonsterManager';
 import { CharacterController } from '../controller/CharacterController';
 
 export class WorldEngine {
@@ -28,6 +29,7 @@ export class WorldEngine {
   private greenhouse: GreenhousePavilion;
   private meadow: BotanicalMeadow;
   private collectibles: CollectiblesManager;
+  private monsters: MonsterManager;
   private controller: CharacterController;
 
   // State
@@ -88,8 +90,20 @@ export class WorldEngine {
     this.greenhouse = new GreenhousePavilion();
     this.meadow = new BotanicalMeadow();
     this.collectibles = new CollectiblesManager();
+    this.monsters = new MonsterManager();
     this.tomatoModel = new TomatoModel();
     this.controller = new CharacterController();
+
+    // Wire Quest Callbacks
+    this.monsters.onQuestUpdate = (defeated, total) => {
+      this.callbacks.onQuestUpdate?.(defeated, total);
+    };
+    this.monsters.onQuestComplete = (rewardScore) => {
+      this.controller.addScore(rewardScore);
+      this.audioSynth.play('fanfare');
+      this.callbacks.onScoreChange?.(this.controller.getScore());
+      this.callbacks.onQuestComplete?.(rewardScore);
+    };
 
     this.tomatoModel.setMascotVisible(options.mascotMode);
 
@@ -97,6 +111,7 @@ export class WorldEngine {
     this.scene.add(this.meadow.getRoot());
     this.scene.add(this.greenhouse.getRoot());
     this.scene.add(this.collectibles.getRoot());
+    this.scene.add(this.monsters.getRoot());
     this.scene.add(this.tomatoModel.getRoot());
 
     // 5. Setup Lighting
@@ -243,7 +258,24 @@ export class WorldEngine {
     if (spun) {
       this.audioSynth.play('spin');
       this.callbacks.onScoreChange?.(this.controller.getScore());
+
+      // Immediate spin attack check on nearby pest monsters
+      const hitResult = this.monsters.checkAttackHit(
+        this.controller.getPosition(),
+        true,
+        false,
+        false
+      );
+      if (hitResult) {
+        this.controller.addScore(hitResult.scoreGained);
+        this.audioSynth.play(hitResult.defeated ? 'defeat' : 'hit');
+        this.callbacks.onScoreChange?.(this.controller.getScore());
+      }
     }
+  }
+
+  public getQuestStatus(): { defeated: number; total: number; completed: boolean } {
+    return this.monsters.getQuestStatus();
   }
 
   public getActiveCollectibles(): { x: number; z: number; points: number }[] {
@@ -341,6 +373,21 @@ export class WorldEngine {
       this.callbacks.onScoreChange?.(this.controller.getScore());
     }
 
+    // 5b. Update Pest Monsters & Dynamic Combat Detection
+    this.monsters.update(deltaTime, elapsedTime, this.camera);
+    const isStompAttack = !state.isGrounded && state.velocity.y < -1.2;
+    const attackHit = this.monsters.checkAttackHit(
+      state.position,
+      this.controller.getIsSpinning(),
+      isStompAttack,
+      state.isBoosting
+    );
+    if (attackHit) {
+      this.controller.addScore(attackHit.scoreGained);
+      this.audioSynth.play(attackHit.defeated ? 'defeat' : 'hit');
+      this.callbacks.onScoreChange?.(this.controller.getScore());
+    }
+
     // 6. Update Meadow Living Ecosystem (Windmill, butterflies, clouds, spores)
     this.meadow.update(deltaTime, elapsedTime);
 
@@ -401,6 +448,7 @@ export class WorldEngine {
     this.greenhouse.dispose();
     this.meadow.dispose();
     this.collectibles.dispose();
+    this.monsters.dispose();
     this.tomatoModel.dispose();
   }
 }

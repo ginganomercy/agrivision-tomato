@@ -10,6 +10,8 @@ export interface WorldCallbacks {
   onBounce?: (bounceCount: number) => void;
   onZoneChange?: (zoneName: string) => void;
   onPlayerUpdate?: (pos: { x: number; z: number }, heading: number) => void;
+  onQuestUpdate?: (defeated: number, total: number) => void;
+  onQuestComplete?: (rewardScore: number) => void;
 }
 
 export interface InputState {
