@@ -130,6 +130,13 @@ export class CollectiblesManager {
       if (dist < item.radius) {
         item.active = false;
         item.mesh.visible = false;
+
+        // Continuous rewards loop: auto-respawn after 4 seconds
+        setTimeout(() => {
+          item.active = true;
+          item.mesh.visible = true;
+        }, 4000);
+
         return item;
       }
     }

@@ -34,19 +34,22 @@ export class GreenhousePavilion {
   }
 
   private buildTerracottaFloor(): void {
-    // Terracotta tiled base
-    const floorGeo = new THREE.BoxGeometry(GreenhousePavilion.WIDTH, 0.2, GreenhousePavilion.DEPTH);
+    // Terracotta tiled base - raised to y = 0.06 with top face at y = 0.14 to eliminate z-fighting
+    const floorGeo = new THREE.BoxGeometry(GreenhousePavilion.WIDTH, 0.16, GreenhousePavilion.DEPTH);
     this.disposables.push(floorGeo);
 
     const floorMat = new THREE.MeshStandardMaterial({
       color: 0xbf573f, // Warm Tuscan terracotta
       roughness: 0.45,
-      metalness: 0.05
+      metalness: 0.05,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2
     });
     this.disposables.push(floorMat);
 
     const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.position.set(0, -0.1, 0);
+    floor.position.set(0, 0.06, 0);
     floor.receiveShadow = true;
     this.group.add(floor);
 
@@ -55,24 +58,24 @@ export class GreenhousePavilion {
     this.disposables.push(curbMat);
 
     const curbNorth = new THREE.Mesh(new THREE.BoxGeometry(GreenhousePavilion.WIDTH + 0.4, 0.4, 0.4), curbMat);
-    curbNorth.position.set(0, 0.1, -GreenhousePavilion.DEPTH / 2);
+    curbNorth.position.set(0, 0.20, -GreenhousePavilion.DEPTH / 2);
     this.group.add(curbNorth);
 
     const curbWest = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, GreenhousePavilion.DEPTH), curbMat);
-    curbWest.position.set(-GreenhousePavilion.WIDTH / 2, 0.1, 0);
+    curbWest.position.set(-GreenhousePavilion.WIDTH / 2, 0.20, 0);
     this.group.add(curbWest);
 
     const curbEast = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, GreenhousePavilion.DEPTH), curbMat);
-    curbEast.position.set(GreenhousePavilion.WIDTH / 2, 0.1, 0);
+    curbEast.position.set(GreenhousePavilion.WIDTH / 2, 0.20, 0);
     this.group.add(curbEast);
 
     // South curb with open doorway (gap between x = -2.5 and +2.5)
     const curbSouthLeft = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.4, 0.4), curbMat);
-    curbSouthLeft.position.set(-5.75, 0.1, GreenhousePavilion.DEPTH / 2);
+    curbSouthLeft.position.set(-5.75, 0.20, GreenhousePavilion.DEPTH / 2);
     this.group.add(curbSouthLeft);
 
     const curbSouthRight = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.4, 0.4), curbMat);
-    curbSouthRight.position.set(5.75, 0.1, GreenhousePavilion.DEPTH / 2);
+    curbSouthRight.position.set(5.75, 0.20, GreenhousePavilion.DEPTH / 2);
     this.group.add(curbSouthRight);
   }
 

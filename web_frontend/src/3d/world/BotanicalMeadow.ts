@@ -46,7 +46,12 @@ export class BotanicalMeadow {
         const outerRise = Math.pow(Math.max(0, distFromCenter - 25) / 20, 2) * 3.5;
         pos.setY(i, hill + outerRise);
       } else {
-        pos.setY(i, 0);
+        // Depress terrain under greenhouse footprint to -0.06m to eliminate coplanar z-fighting
+        if (Math.abs(x) < 10.5 && Math.abs(z) < 8.5) {
+          pos.setY(i, -0.06);
+        } else {
+          pos.setY(i, 0);
+        }
       }
     }
     terrainGeo.computeVertexNormals();

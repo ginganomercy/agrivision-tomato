@@ -39,6 +39,9 @@ export class TomatoModel {
     this.group.add(this.stemGroup);
     this.group.add(this.leavesGroup);
     this.group.add(this.mascotGroup);
+
+    // Scale character to nimble, beloved mascot proportion (0.82x)
+    this.group.scale.set(0.82, 0.82, 0.82);
   }
 
   public getRoot(): THREE.Group {

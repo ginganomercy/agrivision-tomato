@@ -26,18 +26,17 @@ export class CharacterController {
   private spinTimer: number = 0;
   private isSpinning: boolean = false;
 
-  // Kinematic tuning constants
-  private static readonly ACCELERATION = 42.0;
-  private static readonly TURBO_ACCELERATION = 78.0;
-  private static readonly MAX_SPEED = 12.0;
-  private static readonly TURBO_MAX_SPEED = 24.0;
-  private static readonly FRICTION = 0.88;
-  private static readonly GRAVITY = -28.0;
-  private static readonly JUMP_VELOCITY = 11.0;
-  private static readonly GROUND_Y = 0.88;
+  // Kinematic tuning constants - tuned for satisfying smooth gliding momentum
+  private static readonly ACCELERATION = 28.0;
+  private static readonly TURBO_ACCELERATION = 56.0;
+  private static readonly MAX_SPEED = 14.0;
+  private static readonly TURBO_MAX_SPEED = 26.0;
+  private static readonly FRICTION = 0.93; // Buttery smooth momentum
+  private static readonly GRAVITY = -25.0;
+  private static readonly JUMP_VELOCITY = 10.8;
   private static readonly BOUNDARY_LIMIT = 41.0; // Meadow fence boundary
 
-  constructor(initialPosition: THREE.Vector3 = new THREE.Vector3(0, 0.88, 0)) {
+  constructor(initialPosition: THREE.Vector3 = new THREE.Vector3(0, 0.82, 0)) {
     this.position.copy(initialPosition);
   }
 
@@ -90,7 +89,7 @@ export class CharacterController {
   }
 
   public resetPosition(): void {
-    this.position.set(0, CharacterController.GROUND_Y, 0);
+    this.position.set(0, 0.82, 0);
     this.velocity.set(0, 0, 0);
     this.heading = 0;
     this.targetHeading = 0;
@@ -156,9 +155,10 @@ export class CharacterController {
     this.velocity.y += CharacterController.GRAVITY * clampedDt;
     this.position.y += this.velocity.y * clampedDt;
 
-    // Ground Collision
-    if (this.position.y <= CharacterController.GROUND_Y) {
-      this.position.y = CharacterController.GROUND_Y;
+    // Ground Collision with dynamic elevation support (elevated greenhouse floor vs meadow)
+    const currentGroundY = isInsideGreenhouse ? 0.82 : 0.68;
+    if (this.position.y <= currentGroundY) {
+      this.position.y = currentGroundY;
       if (!this.isGrounded) {
         justLanded = true;
         // Bounce damping if falling fast

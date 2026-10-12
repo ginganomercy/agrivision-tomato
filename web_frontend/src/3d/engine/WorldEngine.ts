@@ -50,7 +50,7 @@ export class WorldEngine {
   private pointerPrevY: number = 0;
   private orbitTheta: number = 0;
   private orbitPhi: number = 0.55;
-  private orbitRadius: number = 6.5;
+  private orbitRadius: number = 8.0;
 
   constructor(options: WorldEngineOptions) {
     this.callbacks = options.callbacks;
@@ -62,8 +62,8 @@ export class WorldEngine {
     this.scene.background = new THREE.Color(0x87ceeb); // Natural Sky Blue
     this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
 
-    // 2. Initialize Camera
-    this.camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
+    // 2. Initialize Camera (near = 0.6 eliminates depth-buffer precision compression & z-fighting)
+    this.camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.6, 200);
     this.camera.position.set(0, 4.5, 9.0);
 
     // 3. Initialize Audio
@@ -107,7 +107,8 @@ export class WorldEngine {
     sunLight.shadow.camera.right = shadowD;
     sunLight.shadow.camera.top = shadowD;
     sunLight.shadow.camera.bottom = -shadowD;
-    sunLight.shadow.bias = -0.0004;
+    sunLight.shadow.bias = -0.0001;
+    sunLight.shadow.normalBias = 0.02;
     this.scene.add(sunLight);
 
     // Ambient fill
@@ -311,9 +312,9 @@ export class WorldEngine {
 
   private updateCamera(targetPos: THREE.Vector3, targetHeading: number): void {
     if (this.cameraMode === 'chase') {
-      // Smooth Third-Person Chase Camera positioned behind tomato heading
-      const camDist = 5.2;
-      const camHeight = 2.4;
+      // Spacious, comfortable Third-Person Chase Camera (beloved wide perspective)
+      const camDist = 8.2;
+      const camHeight = 3.6;
       const behindX = targetPos.x - Math.sin(targetHeading) * camDist;
       const behindZ = targetPos.z - Math.cos(targetHeading) * camDist;
 
@@ -322,7 +323,7 @@ export class WorldEngine {
       this.camera.position.y += (targetPos.y + camHeight - this.camera.position.y) * 0.08;
       this.camera.position.z += (behindZ - this.camera.position.z) * 0.08;
 
-      const lookTarget = targetPos.clone().add(new THREE.Vector3(0, 0.6, 0));
+      const lookTarget = targetPos.clone().add(new THREE.Vector3(0, 0.85, 0));
       this.camera.lookAt(lookTarget);
     } else {
       // Orbit Camera centered on tomato
@@ -331,7 +332,7 @@ export class WorldEngine {
       const cz = targetPos.z + this.orbitRadius * Math.sin(this.orbitPhi) * Math.cos(this.orbitTheta);
 
       this.camera.position.set(cx, cy, cz);
-      this.camera.lookAt(targetPos.clone().add(new THREE.Vector3(0, 0.5, 0)));
+      this.camera.lookAt(targetPos.clone().add(new THREE.Vector3(0, 0.8, 0)));
     }
   }
 
