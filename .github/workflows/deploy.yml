@@ -51,37 +51,39 @@ jobs:
           port: ${{ vars.SERVER_PORT || secrets.SERVER_PORT || '22' }}
           script_stop: true
           script: |
+            set -x
             set -e
-            DEPLOY_DIR="${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/opt/agrivision-tomato' }}"
+
+            # 1. Bersihkan variabel dari karakter newline/CRLF bawaan Windows
+            RAW_DIR="${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/opt/agrivision-tomato' }}"
+            DEPLOY_DIR=$(echo "$RAW_DIR" | tr -d '\r\n ' | sed 's:/*$::')
+            [ -z "$DEPLOY_DIR" ] && DEPLOY_DIR="/opt/agrivision-tomato"
+            
             REPO_URL="https://github.com/ginganomercy/agrivision-tomato.git"
-            export HF_TOKEN="${{ secrets.HF_TOKEN }}"
+            export HF_TOKEN=$(echo "${{ secrets.HF_TOKEN }}" | tr -d '\r\n ')
 
             echo "=========================================="
             echo "🚀 Starting AgriVision Deployment on Bare-Metal"
             echo "Target Directory: $DEPLOY_DIR"
             echo "=========================================="
 
-            # 1. Pastikan folder project ada & sinkronkan dengan git secara aman
-            if [ ! -d "$DEPLOY_DIR" ]; then
-              echo "[INFO] Direktori belum ada. Menyiapkan clone..."
-              if [ "$EUID" -ne 0 ]; then sudo mkdir -p "$DEPLOY_DIR" && sudo chown -R $USER:$USER "$DEPLOY_DIR"; else mkdir -p "$DEPLOY_DIR"; fi
-              git clone "$REPO_URL" "$DEPLOY_DIR"
-              cd "$DEPLOY_DIR"
-            elif [ ! -d "$DEPLOY_DIR/.git" ]; then
-              echo "[INFO] Direktori ada tapi belum memiliki .git. Menginisialisasi git..."
-              cd "$DEPLOY_DIR"
+            # 2. Sinkronisasi Git secara fail-safe & self-healing
+            if [ "$EUID" -ne 0 ]; then sudo mkdir -p "$DEPLOY_DIR" && sudo chown -R $USER:$USER "$DEPLOY_DIR"; else mkdir -p "$DEPLOY_DIR"; fi
+            cd "$DEPLOY_DIR"
+            git config --global --add safe.directory "$DEPLOY_DIR" || true
+
+            if [ ! -d ".git" ]; then
+              echo "[INFO] Menginisialisasi Git repository..."
               git init
-              git config --global --add safe.directory "$DEPLOY_DIR" || true
-              git remote add origin "$REPO_URL" || git remote set-url origin "$REPO_URL"
-              git fetch origin main
-              git reset --hard origin/main
-            else
-              echo "[INFO] Direktori git sudah ada. Menarik commit terbaru..."
-              cd "$DEPLOY_DIR"
-              git config --global --add safe.directory "$DEPLOY_DIR" || true
-              git fetch origin main
-              git reset --hard origin/main
             fi
+
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "$REPO_URL"
+
+            echo "[INFO] Menarik commit terbaru dari GitHub..."
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
 
             # 2. Pindah ke direktori api_backend
             cd "$DEPLOY_DIR/api_backend"
