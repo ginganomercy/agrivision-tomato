@@ -44,6 +44,7 @@ export class WorldEngine {
   private cameraMode: CameraMode = 'chase';
   private callbacks: WorldCallbacks;
   private currentZoneName: string = '';
+  private lastReportedSpeed: number = -1;
 
   // Orbit camera drag state
   private isPointerDown: boolean = false;
@@ -52,6 +53,18 @@ export class WorldEngine {
   private orbitTheta: number = 0;
   private orbitPhi: number = 0.55;
   private orbitRadius: number = 8.0;
+
+  /**
+   * Evaluates if current client is a touch mobile device for adaptive rendering
+   */
+  public static isMobileDevice(): boolean {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const isNarrow = window.innerWidth <= 1024;
+    return isMobileUA || (isTouch && isNarrow);
+  }
 
   constructor(options: WorldEngineOptions) {
     this.callbacks = options.callbacks;
@@ -100,8 +113,10 @@ export class WorldEngine {
     this.sunLight = new THREE.DirectionalLight(0xfff5e6, 1.4);
     this.sunLight.position.set(22, 45, 18);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.width = 2048;
-    this.sunLight.shadow.mapSize.height = 2048;
+    const isMobile = WorldEngine.isMobileDevice();
+    const shadowMapSize = isMobile ? 1024 : 2048;
+    this.sunLight.shadow.mapSize.width = shadowMapSize;
+    this.sunLight.shadow.mapSize.height = shadowMapSize;
     this.sunLight.shadow.camera.near = 0.5;
     this.sunLight.shadow.camera.far = 130;
     const shadowD = 32;
@@ -125,18 +140,21 @@ export class WorldEngine {
     const w = container.clientWidth || 800;
     const h = container.clientHeight || 620;
 
-    // Initialize WebGLRenderer
+    // Initialize WebGLRenderer with adaptive hardware tiering
+    const isMobile = WorldEngine.isMobileDevice();
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: !isMobile, // Disable MSAA on mobile for crisp fillrate
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(w, h);
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
     this.renderer.domElement.style.display = 'block';
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
+    // Adaptive DPR: Cap at 1.15 on mobile (60 FPS silky smooth), 1.5 on desktop
+    const targetDPR = isMobile ? 1.15 : 1.5;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, targetDPR));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
 
@@ -289,10 +307,13 @@ export class WorldEngine {
       this.callbacks.onZoneChange?.(zoneName);
     }
 
-    // 3. Speed Gauge Callback (Percentage of max speed)
+    // 3. Throttled Speed Gauge Callback (Percentage of max speed)
     const horizSpeed = Math.hypot(state.velocity.x, state.velocity.z);
     const speedPct = Math.min(100, Math.round((horizSpeed / 24.0) * 100));
-    this.callbacks.onSpeedChange?.(speedPct);
+    if (Math.abs(speedPct - this.lastReportedSpeed) >= 2 || (speedPct === 0 && this.lastReportedSpeed !== 0)) {
+      this.lastReportedSpeed = speedPct;
+      this.callbacks.onSpeedChange?.(speedPct);
+    }
 
     // 4. Update Character Visual Posture
     const tomatoGroup = this.tomatoModel.getRoot();

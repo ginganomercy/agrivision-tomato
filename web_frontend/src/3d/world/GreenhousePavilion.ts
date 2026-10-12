@@ -147,14 +147,12 @@ export class GreenhousePavilion {
   }
 
   private buildGlassEnvelope(): void {
-    const glassMat = new THREE.MeshPhysicalMaterial({
+    const glassMat = new THREE.MeshStandardMaterial({
       color: 0xd6f0ff,
       transparent: true,
       opacity: 0.28,
       roughness: 0.1,
       metalness: 0.1,
-      transmission: 0.75,
-      ior: 1.5,
       side: THREE.DoubleSide
     });
     this.disposables.push(glassMat);

@@ -137,14 +137,12 @@ export class BotanicalMeadow {
     waterGeo.rotateX(-Math.PI / 2);
     this.disposables.push(waterGeo);
 
-    const waterMat = new THREE.MeshPhysicalMaterial({
+    const waterMat = new THREE.MeshStandardMaterial({
       color: 0x1d70b8,
-      roughness: 0.1,
-      metalness: 0.1,
-      transmission: 0.8,
-      ior: 1.33,
+      roughness: 0.08,
+      metalness: 0.15,
       transparent: true,
-      opacity: 0.85
+      opacity: 0.82
     });
     this.disposables.push(waterMat);
 

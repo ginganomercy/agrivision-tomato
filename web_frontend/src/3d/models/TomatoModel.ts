@@ -184,13 +184,12 @@ export class TomatoModel {
    * Constructs tiny clear dew drops on the top surface
    */
   private buildDewDrops(): void {
-    const dewMat = new THREE.MeshPhysicalMaterial({
+    const dewMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       roughness: 0.05,
-      metalness: 0.0,
-      transmission: 0.9,
-      ior: 1.33,
-      clearcoat: 1.0
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.85
     });
     this.disposables.push(dewMat);
 

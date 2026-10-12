@@ -38,9 +38,10 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   const engineRef = useRef<WorldEngine | null>(null);
   const radarCanvasRef = useRef<HTMLCanvasElement>(null);
   const playerCoordsRef = useRef<{ x: number; z: number; heading: number }>({ x: 0, z: 0, heading: 0 });
+  const speedTextRef = useRef<HTMLElement>(null);
+  const tiltTextRef = useRef<HTMLSpanElement>(null);
 
   // Reactive UI States
-  const [speedGauge, setSpeedGauge] = useState<number>(0);
   const [bounces, setBounces] = useState<number>(0);
   const [score, setScore] = useState<number>(0);
   const [isAudioEnabled, setIsAudioEnabled] = useState<boolean>(true);
@@ -57,16 +58,17 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isTiltEnabled, setIsTiltEnabled] = useState<boolean>(false);
-  const [tiltSteerAngle, setTiltSteerAngle] = useState<number>(0);
   const tiltSteerRef = useRef<number>(0);
 
-  // 1. Detect Screen Orientation and Size Changes
+  // 1. Detect Screen Orientation, Touch Capability, and Size Changes
   useEffect(() => {
     const handleViewportChange = () => {
       const isLandscape = window.innerWidth > window.innerHeight;
-      const isShortHeight = window.innerHeight <= 560;
+      const isShortHeight = window.innerHeight <= 620;
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       const isMobileWidth = window.innerWidth <= 1024;
-      setIsMobileLandscape(isLandscape && (isShortHeight || isMobileWidth));
+      const isMobLand = isLandscape && (isShortHeight || (isTouch && isMobileWidth));
+      setIsMobileLandscape(isMobLand);
 
       const isCurrentFullscreen = !!(
         document.fullscreenElement || 
@@ -132,7 +134,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       // Reset steering inputs
       engineRef.current?.setInput('left', false);
       engineRef.current?.setInput('right', false);
-      setTiltSteerAngle(0);
+      if (tiltTextRef.current) tiltTextRef.current.innerText = 'SEIMBANG (0°)';
       tiltSteerRef.current = 0;
     }
   }, [isTiltEnabled]);
@@ -140,7 +142,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
   useEffect(() => {
     if (!isTiltEnabled) return;
 
-    const DEADZONE = 8.0; // 8 degrees deadzone for comfortable neutral hand position
+    const DEADZONE = 6.0; // 6 degrees deadzone for responsive, natural tilt steering
 
     const handleOrientation = (e: DeviceOrientationEvent) => {
       const gamma = e.gamma ?? 0; // Roll in portrait (-90 to 90)
@@ -175,9 +177,16 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
 
     window.addEventListener('deviceorientation', handleOrientation);
 
-    // Throttle UI indicator updates (10 fps) to prevent react render overhead
+    // Throttle UI indicator updates (10 fps) via direct DOM Ref (ZERO React re-renders)
     const timer = setInterval(() => {
-      setTiltSteerAngle(Math.round(tiltSteerRef.current));
+      const angle = Math.round(tiltSteerRef.current);
+      if (tiltTextRef.current) {
+        tiltTextRef.current.innerText = angle < -6 
+          ? `◄ MIRING KIRI (${Math.abs(angle)}°)` 
+          : angle > 6 
+          ? `MIRING KANAN (${angle}°) ►` 
+          : `SEIMBANG (${angle}°)`;
+      }
     }, 100);
 
     return () => {
@@ -185,7 +194,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       clearInterval(timer);
       engineRef.current?.setInput('left', false);
       engineRef.current?.setInput('right', false);
-      setTiltSteerAngle(0);
+      if (tiltTextRef.current) tiltTextRef.current.innerText = 'SEIMBANG (0°)';
       tiltSteerRef.current = 0;
     };
   }, [isTiltEnabled]);
@@ -205,7 +214,9 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
           onInteract?.(`score_${newScore}`);
         },
         onSpeedChange: (speedPercent) => {
-          setSpeedGauge(speedPercent);
+          if (speedTextRef.current) {
+            speedTextRef.current.innerText = `${speedPercent}%`;
+          }
         },
         onBounce: (bounceCount) => {
           setBounces(bounceCount);
@@ -268,13 +279,18 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     };
   }, []);
 
-  // 5. Real-time 2D Canvas Radar Rendering Loop (60 FPS decoupled from React state)
+  // 5. Real-time 2D Canvas Radar Rendering Loop (30 FPS throttled for mobile efficiency)
   useEffect(() => {
     if (!showMiniMap) return;
     let animId: number;
+    let lastTime = 0;
+    const interval = 1000 / 30; // 30 FPS cap
 
-    const renderRadar = () => {
+    const renderRadar = (timestamp: number = 0) => {
       animId = requestAnimationFrame(renderRadar);
+      if (timestamp - lastTime < interval) return;
+      lastTime = timestamp;
+
       const canvas = radarCanvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
@@ -483,7 +499,29 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
 
   const handleVirtualInput = useCallback((key: keyof InputState, active: boolean) => {
     engineRef.current?.setInput(key, active);
+    setActiveKeys((prev) => {
+      if (prev[key] === active) return prev;
+      return { ...prev, [key]: active };
+    });
   }, []);
+
+  const handlePointerDown = useCallback((key: keyof InputState, e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+    handleVirtualInput(key, true);
+  }, [handleVirtualInput]);
+
+  const handlePointerUp = useCallback((key: keyof InputState, e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch (_) {}
+    handleVirtualInput(key, false);
+  }, [handleVirtualInput]);
 
   const handleJump = useCallback(() => {
     engineRef.current?.triggerJump();
@@ -500,19 +538,25 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
     }
   }, []);
 
+  const isImmersive = isFullscreen || isMobileLandscape;
+
   return (
     <div 
       ref={rootRef}
       style={{
-        position: 'relative',
-        width: '100%',
-        height: isFullscreen ? '100vh' : '100%',
-        minHeight: isFullscreen ? '100vh' : 380,
-        borderRadius: isFullscreen ? 0 : 24,
+        position: isImmersive ? 'fixed' : 'relative',
+        top: isImmersive ? 0 : undefined,
+        left: isImmersive ? 0 : undefined,
+        right: isImmersive ? 0 : undefined,
+        bottom: isImmersive ? 0 : undefined,
+        width: isImmersive ? '100vw' : '100%',
+        height: isImmersive ? '100vh' : '100%',
+        zIndex: isImmersive ? 99999 : 1,
+        borderRadius: isImmersive ? 0 : 24,
         overflow: 'hidden',
         background: '#070A12',
-        border: isFullscreen ? 'none' : '1px solid rgba(16, 185, 129, 0.25)',
-        boxShadow: isFullscreen ? 'none' : '0 20px 50px rgba(0, 0, 0, 0.6)',
+        border: isImmersive ? 'none' : '1px solid rgba(16, 185, 129, 0.25)',
+        boxShadow: isImmersive ? 'none' : '0 20px 50px rgba(0, 0, 0, 0.6)',
         userSelect: 'none',
         WebkitUserSelect: 'none',
         touchAction: 'none',
@@ -589,8 +633,8 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             whiteSpace: 'nowrap'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Zap size={12} color={speedGauge > 50 ? '#FBBF24' : '#34D399'} />
-              <span>SPD: <strong style={{ color: '#34D399' }}>{speedGauge}%</strong></span>
+              <Zap size={12} color="#34D399" />
+              <span>SPD: <strong ref={speedTextRef} style={{ color: '#34D399' }}>0%</strong></span>
             </div>
             <div style={{ width: 1, height: 10, background: 'rgba(255, 255, 255, 0.2)' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -804,13 +848,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
           pointerEvents: 'none'
         }}>
           <Smartphone size={12} color="#34D399" />
-          <span>
-            {tiltSteerAngle < -8 
-              ? `◄ MIRING KIRI (${Math.abs(tiltSteerAngle)}°)` 
-              : tiltSteerAngle > 8 
-              ? `MIRING KANAN (${tiltSteerAngle}°) ►` 
-              : `SEIMBANG (${tiltSteerAngle}°)`}
-          </span>
+          <span ref={tiltTextRef}>SEIMBANG (0°)</span>
         </div>
       )}
 
@@ -863,20 +901,20 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       {/* LEFT THUMB ZONE: Directional D-Pad (Up, Left, Down, Right) */}
       <div style={{
         position: 'absolute',
-        bottom: isMobileLandscape ? 12 : 24,
-        left: isMobileLandscape ? 14 : 24,
-        background: 'rgba(15, 23, 42, 0.88)',
+        bottom: isMobileLandscape ? 14 : 24,
+        left: isMobileLandscape ? 16 : 24,
+        background: 'rgba(15, 23, 42, 0.90)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
-        padding: isMobileLandscape ? '8px 10px' : '10px 14px',
-        borderRadius: 20,
-        border: '1px solid rgba(255, 255, 255, 0.15)',
+        padding: isMobileLandscape ? '10px 12px' : '10px 14px',
+        borderRadius: 22,
+        border: '1px solid rgba(255, 255, 255, 0.18)',
         boxShadow: '0 12px 36px rgba(0,0,0,0.5)',
         pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 5,
+        gap: 6,
         zIndex: 25,
         touchAction: 'none'
       }}>
@@ -886,118 +924,113 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
 
         {/* Up Button */}
         <button
-          onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('forward', true); }}
-          onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('forward', false); }}
-          onPointerLeave={() => handleVirtualInput('forward', false)}
-          onPointerCancel={() => handleVirtualInput('forward', false)}
+          onPointerDown={(e) => handlePointerDown('forward', e)}
+          onPointerUp={(e) => handlePointerUp('forward', e)}
+          onPointerCancel={(e) => handlePointerUp('forward', e)}
           style={{
-            width: isMobileLandscape ? 40 : 36,
-            height: isMobileLandscape ? 40 : 36,
-            borderRadius: 12,
+            width: isMobileLandscape ? 50 : 44,
+            height: isMobileLandscape ? 50 : 44,
+            borderRadius: 14,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: activeKeys['w'] || activeKeys['arrowup'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
-            border: '1px solid rgba(255, 255, 255, 0.18)',
+            background: activeKeys['forward'] || activeKeys['w'] || activeKeys['arrowup'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+            border: '1.5px solid rgba(255, 255, 255, 0.22)',
             color: '#FFF',
             cursor: 'pointer',
-            boxShadow: activeKeys['w'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+            boxShadow: activeKeys['forward'] || activeKeys['w'] ? '0 0 16px rgba(16, 185, 129, 0.6)' : 'none',
             touchAction: 'none'
           }}
           title="Maju (W)"
         >
-          <ArrowUp size={20} />
+          <ArrowUp size={24} />
         </button>
 
         {/* Left, Down, Right Horizontal Row */}
-        <div style={{ display: 'flex', gap: 5 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
           <button
-            onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('left', true); }}
-            onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('left', false); }}
-            onPointerLeave={() => handleVirtualInput('left', false)}
-            onPointerCancel={() => handleVirtualInput('left', false)}
+            onPointerDown={(e) => handlePointerDown('left', e)}
+            onPointerUp={(e) => handlePointerUp('left', e)}
+            onPointerCancel={(e) => handlePointerUp('left', e)}
             style={{
-              width: isMobileLandscape ? 40 : 36,
-              height: isMobileLandscape ? 40 : 36,
-              borderRadius: 12,
+              width: isMobileLandscape ? 50 : 44,
+              height: isMobileLandscape ? 50 : 44,
+              borderRadius: 14,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: activeKeys['a'] || activeKeys['arrowleft'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
+              background: activeKeys['left'] || activeKeys['a'] || activeKeys['arrowleft'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+              border: '1.5px solid rgba(255, 255, 255, 0.22)',
               color: '#FFF',
               cursor: 'pointer',
-              boxShadow: activeKeys['a'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+              boxShadow: activeKeys['left'] || activeKeys['a'] ? '0 0 16px rgba(16, 185, 129, 0.6)' : 'none',
               touchAction: 'none'
             }}
             title="Kiri (A)"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={24} />
           </button>
           <button
-            onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('backward', true); }}
-            onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('backward', false); }}
-            onPointerLeave={() => handleVirtualInput('backward', false)}
-            onPointerCancel={() => handleVirtualInput('backward', false)}
+            onPointerDown={(e) => handlePointerDown('backward', e)}
+            onPointerUp={(e) => handlePointerUp('backward', e)}
+            onPointerCancel={(e) => handlePointerUp('backward', e)}
             style={{
-              width: isMobileLandscape ? 40 : 36,
-              height: isMobileLandscape ? 40 : 36,
-              borderRadius: 12,
+              width: isMobileLandscape ? 50 : 44,
+              height: isMobileLandscape ? 50 : 44,
+              borderRadius: 14,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: activeKeys['s'] || activeKeys['arrowdown'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
+              background: activeKeys['backward'] || activeKeys['s'] || activeKeys['arrowdown'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+              border: '1.5px solid rgba(255, 255, 255, 0.22)',
               color: '#FFF',
               cursor: 'pointer',
-              boxShadow: activeKeys['s'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+              boxShadow: activeKeys['backward'] || activeKeys['s'] ? '0 0 16px rgba(16, 185, 129, 0.6)' : 'none',
               touchAction: 'none'
             }}
             title="Mundur (S)"
           >
-            <ArrowDown size={20} />
+            <ArrowDown size={24} />
           </button>
           <button
-            onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('right', true); }}
-            onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('right', false); }}
-            onPointerLeave={() => handleVirtualInput('right', false)}
-            onPointerCancel={() => handleVirtualInput('right', false)}
+            onPointerDown={(e) => handlePointerDown('right', e)}
+            onPointerUp={(e) => handlePointerUp('right', e)}
+            onPointerCancel={(e) => handlePointerUp('right', e)}
             style={{
-              width: isMobileLandscape ? 40 : 36,
-              height: isMobileLandscape ? 40 : 36,
-              borderRadius: 12,
+              width: isMobileLandscape ? 50 : 44,
+              height: isMobileLandscape ? 50 : 44,
+              borderRadius: 14,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: activeKeys['d'] || activeKeys['arrowright'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
+              background: activeKeys['right'] || activeKeys['d'] || activeKeys['arrowright'] ? '#10B981' : 'rgba(30, 41, 59, 0.9)',
+              border: '1.5px solid rgba(255, 255, 255, 0.22)',
               color: '#FFF',
               cursor: 'pointer',
-              boxShadow: activeKeys['d'] ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+              boxShadow: activeKeys['right'] || activeKeys['d'] ? '0 0 16px rgba(16, 185, 129, 0.6)' : 'none',
               touchAction: 'none'
             }}
             title="Kanan (D)"
           >
-            <ArrowRight size={20} />
+            <ArrowRight size={24} />
           </button>
         </div>
 
-        {/* On non-landscape/desktop: inline actions underneath D-pad */}
+        {/* On desktop/portrait mode: inline actions underneath D-pad */}
         {!isMobileLandscape && (
           <div style={{ display: 'flex', gap: 5, marginTop: 4 }}>
             <button
-              onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('turbo', true); }}
-              onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('turbo', false); }}
-              onPointerLeave={() => handleVirtualInput('turbo', false)}
-              onPointerCancel={() => handleVirtualInput('turbo', false)}
+              onPointerDown={(e) => handlePointerDown('turbo', e)}
+              onPointerUp={(e) => handlePointerUp('turbo', e)}
+              onPointerCancel={(e) => handlePointerUp('turbo', e)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 4,
-                height: 26,
+                height: 28,
                 padding: '0 8px',
                 borderRadius: 8,
-                background: activeKeys['shift'] ? '#0284C7' : 'rgba(2, 132, 199, 0.25)',
+                background: activeKeys['turbo'] || activeKeys['shift'] ? '#0284C7' : 'rgba(2, 132, 199, 0.25)',
                 border: '1px solid #0284C7',
                 color: '#FFF',
                 fontSize: 10,
@@ -1014,7 +1047,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             <button
               onPointerDown={(e) => { e.preventDefault(); handleJump(); }}
               style={{
-                height: 26,
+                height: 28,
                 padding: '0 10px',
                 borderRadius: 8,
                 background: 'rgba(5, 150, 105, 0.25)',
@@ -1033,7 +1066,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             <button
               onPointerDown={(e) => { e.preventDefault(); handleSpin(); }}
               style={{
-                height: 26,
+                height: 28,
                 padding: '0 8px',
                 borderRadius: 8,
                 background: 'rgba(225, 29, 72, 0.25)',
@@ -1056,12 +1089,12 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
       {isMobileLandscape && (
         <div style={{
           position: 'absolute',
-          bottom: 12,
-          right: 14,
+          bottom: 14,
+          right: 16,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-end',
-          gap: 6,
+          gap: 8,
           zIndex: 25,
           pointerEvents: 'auto',
           touchAction: 'none'
@@ -1073,41 +1106,68 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              padding: '4px 10px',
-              borderRadius: 10,
-              background: 'rgba(15, 23, 42, 0.88)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              padding: '5px 12px',
+              borderRadius: 12,
+              background: 'rgba(15, 23, 42, 0.90)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
               color: '#CBD5E1',
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 600,
               cursor: 'pointer'
             }}
           >
-            <RotateCcw size={11} color="#34D399" />
+            <RotateCcw size={12} color="#34D399" />
             <span>Reset Posisi</span>
           </button>
 
           {/* Action Buttons Row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* If Tilt steering is ON: Dedicated GAS/PEDAL MAJU Button */}
+            {isTiltEnabled && (
+              <button
+                onPointerDown={(e) => handlePointerDown('forward', e)}
+                onPointerUp={(e) => handlePointerUp('forward', e)}
+                onPointerCancel={(e) => handlePointerUp('forward', e)}
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: activeKeys['forward'] ? '#059669' : 'rgba(16, 185, 129, 0.45)',
+                  border: '2.5px solid #34D399',
+                  color: '#FFF',
+                  cursor: 'pointer',
+                  boxShadow: activeKeys['forward'] ? '0 0 18px rgba(16, 185, 129, 0.7)' : '0 4px 14px rgba(16, 185, 129, 0.35)',
+                  touchAction: 'none'
+                }}
+                title="Tahan untuk Gas / Melaju (Tilt Mode)"
+              >
+                <Zap size={18} color="#A7F3D0" />
+                <span style={{ fontSize: 9, fontWeight: 900, color: '#A7F3D0' }}>GAS</span>
+              </button>
+            )}
+
             {/* Turbo Sprint (Round Blue) */}
             <button
-              onPointerDown={(e) => { e.preventDefault(); handleVirtualInput('turbo', true); }}
-              onPointerUp={(e) => { e.preventDefault(); handleVirtualInput('turbo', false); }}
-              onPointerLeave={() => handleVirtualInput('turbo', false)}
-              onPointerCancel={() => handleVirtualInput('turbo', false)}
+              onPointerDown={(e) => handlePointerDown('turbo', e)}
+              onPointerUp={(e) => handlePointerUp('turbo', e)}
+              onPointerCancel={(e) => handlePointerUp('turbo', e)}
               style={{
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 borderRadius: '50%',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: activeKeys['shift'] ? '#0284C7' : 'rgba(2, 132, 199, 0.35)',
+                background: activeKeys['turbo'] ? '#0284C7' : 'rgba(2, 132, 199, 0.35)',
                 border: '2px solid #38BDF8',
                 color: '#FFF',
                 cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(2, 132, 199, 0.4)',
+                boxShadow: activeKeys['turbo'] ? '0 0 16px rgba(56, 189, 248, 0.7)' : '0 4px 14px rgba(2, 132, 199, 0.35)',
                 touchAction: 'none'
               }}
               title="Turbo Sprint (Shift)"
@@ -1120,8 +1180,8 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             <button
               onPointerDown={(e) => { e.preventDefault(); handleSpin(); }}
               style={{
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 borderRadius: '50%',
                 display: 'flex',
                 flexDirection: 'column',
@@ -1131,7 +1191,7 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
                 border: '2px solid #FB7185',
                 color: '#FDA4AF',
                 cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(225, 29, 72, 0.4)',
+                boxShadow: '0 4px 14px rgba(225, 29, 72, 0.35)',
                 touchAction: 'none'
               }}
               title="360 Spin (E)"
@@ -1144,24 +1204,24 @@ export const InteractiveTomato3D: React.FC<InteractiveTomato3DProps> = ({ onInte
             <button
               onPointerDown={(e) => { e.preventDefault(); handleJump(); }}
               style={{
-                width: 54,
-                height: 54,
+                width: 60,
+                height: 60,
                 borderRadius: '50%',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'rgba(16, 185, 129, 0.45)',
-                border: '2.5px solid #34D399',
+                background: 'rgba(16, 185, 129, 0.55)',
+                border: '3px solid #34D399',
                 color: '#FFF',
                 cursor: 'pointer',
-                boxShadow: '0 6px 20px rgba(16, 185, 129, 0.5)',
+                boxShadow: '0 6px 22px rgba(16, 185, 129, 0.55)',
                 touchAction: 'none'
               }}
               title="Melompat (Spasi)"
             >
-              <ArrowUp size={22} color="#34D399" />
-              <span style={{ fontSize: 9, fontWeight: 900, color: '#A7F3D0' }}>LOMPAT</span>
+              <ArrowUp size={24} color="#34D399" />
+              <span style={{ fontSize: 10, fontWeight: 900, color: '#A7F3D0' }}>LOMPAT</span>
             </button>
           </div>
         </div>
