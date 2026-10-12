@@ -206,66 +206,320 @@ export class BotanicalMeadow {
   }
 
   /**
-   * Constructs South-East Windmill Hill with rotating sails
+   * Constructs South-East Dutch Heritage Windmill Hill
+   * Features:
+   * 1. Deep Sub-Surface Masonry Foundation Plinth (anchored 2.8m deep into hill slopes, 0% floating)
+   * 2. Stepped Flagstone Terrace & Arrival Steps connecting directly from stone pathway
+   * 3. Rustic Wooden Railing with cross-bracing
+   * 4. Octagonal Tapered Stone Masonry Lower Tower with Arched Timber Door & Wall Lantern
+   * 5. Mid-Tower Observation Balcony / Catwalk Gallery with wooden corbels & railing
+   * 6. Upper Cedar Weatherboard Timber Body with framed glass windows
+   * 7. Conical Cedar Cap Roof with ornamental finial spire & rear auxiliary fantail
+   * 8. Player-Facing High-Detail 4-Blade Lattice Sails with timber spars, lattice ribs & canvas cloths
    */
   private buildWindmillHill(): void {
     const hillGroup = new THREE.Group();
-    hillGroup.position.set(38, 4.4, 40);
+    // Anchor hillGroup at y = 0 world coordinates for deterministic, rock-solid grounding
+    hillGroup.position.set(38, 0, 40);
 
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8c8275, roughness: 0.9 });
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a2e1b, roughness: 0.8 });
-    const sailMat = new THREE.MeshStandardMaterial({ color: 0xeee8d5, roughness: 0.6, side: THREE.DoubleSide });
-    this.disposables.push(stoneMat, woodMat, sailMat);
+    // Architectural Material Palette
+    const subStoneMat = new THREE.MeshStandardMaterial({ color: 0x48423a, roughness: 0.95 });
+    const terraceStoneMat = new THREE.MeshStandardMaterial({ color: 0x7c7366, roughness: 0.88 });
+    const towerStoneMat = new THREE.MeshStandardMaterial({ color: 0x8f8476, roughness: 0.85 });
+    const timberDarkMat = new THREE.MeshStandardMaterial({ color: 0x3d2616, roughness: 0.8 });
+    const timberCedarMat = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.75 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0xede8d0, roughness: 0.6 });
+    const windowGlassMat = new THREE.MeshStandardMaterial({ color: 0x90caf9, roughness: 0.1, metalness: 0.4, transparent: true, opacity: 0.75 });
+    const ironMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.4 });
+    const sailClothMat = new THREE.MeshStandardMaterial({ color: 0xf5f0e1, roughness: 0.6, side: THREE.DoubleSide });
+    const lanternGlowMat = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xffa000, emissiveIntensity: 0.8 });
 
-    // Conical stone tower base (height 7.5m)
-    const towerGeo = new THREE.CylinderGeometry(1.8, 2.6, 7.5, 12);
+    this.disposables.push(
+      subStoneMat, terraceStoneMat, towerStoneMat, timberDarkMat,
+      timberCedarMat, trimMat, windowGlassMat, ironMat, sailClothMat, lanternGlowMat
+    );
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 1. DEEP SUB-SURFACE FOUNDATION PLINTH (Anchored from y = 1.0m to 4.2m)
+    // At hill radius 4.5m, terrain surface is y = 3.48m. Base at y = 1.0m sinks 2.48m deep!
+    // ─────────────────────────────────────────────────────────────────────────────
+    const subPlinthGeo = new THREE.CylinderGeometry(4.5, 4.8, 3.2, 16);
+    this.disposables.push(subPlinthGeo);
+    const subPlinth = new THREE.Mesh(subPlinthGeo, subStoneMat);
+    subPlinth.position.y = 2.4; // Spans y: 0.8m to 4.0m
+    subPlinth.receiveShadow = true;
+    hillGroup.add(subPlinth);
+
+    // Terrace Upper Plinth & Curb (Spans y: 3.9m to 4.7m)
+    const terracePlinthGeo = new THREE.CylinderGeometry(3.9, 4.3, 0.8, 16);
+    this.disposables.push(terracePlinthGeo);
+    const terracePlinth = new THREE.Mesh(terracePlinthGeo, terraceStoneMat);
+    terracePlinth.position.y = 4.3;
+    terracePlinth.receiveShadow = true;
+    hillGroup.add(terracePlinth);
+
+    // Flagstone Terrace Floor Slab (top at y = 4.72m)
+    const terraceFloorGeo = new THREE.CylinderGeometry(3.8, 3.8, 0.12, 16);
+    this.disposables.push(terraceFloorGeo);
+    const terraceFloor = new THREE.Mesh(terraceFloorGeo, terraceStoneMat);
+    terraceFloor.position.y = 4.72;
+    terraceFloor.receiveShadow = true;
+    hillGroup.add(terraceFloor);
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 2. ARRIVAL STEPS & TERRACE PERIMETER RAILING (Connecting from Path 3)
+    // Incoming path vector is towards North-West (yaw = -135° = -2.356 rad)
+    // ─────────────────────────────────────────────────────────────────────────────
+    const arrivalAngle = -Math.PI * 0.75; // Direction facing incoming player path
+    const arrivalGroup = new THREE.Group();
+    arrivalGroup.rotation.y = arrivalAngle;
+
+    // 3 Curved Stone Arrival Steps descending from y = 4.7m down to 4.0m
+    [
+      { width: 2.2, height: 0.22, depth: 1.0, y: 4.56, z: 3.9 },
+      { width: 2.5, height: 0.22, depth: 1.0, y: 4.34, z: 4.7 },
+      { width: 2.8, height: 0.22, depth: 1.1, y: 4.12, z: 5.5 }
+    ].forEach(st => {
+      const stepGeo = new THREE.BoxGeometry(st.width, st.height, st.depth);
+      this.disposables.push(stepGeo);
+      const step = new THREE.Mesh(stepGeo, terraceStoneMat);
+      step.position.set(0, st.y, st.z);
+      step.receiveShadow = true;
+      arrivalGroup.add(step);
+    });
+    hillGroup.add(arrivalGroup);
+
+    // Terrace Perimeter Wooden Railing (Leaving 2.6m opening for arrival steps)
+    const railPostCount = 12;
+    const railRadius = 3.65;
+    for (let r = 0; r < railPostCount; r++) {
+      const pAngle = (r / railPostCount) * Math.PI * 2;
+      // Skip posts across the doorway / arrival stairs sector (near arrivalAngle)
+      let diffAngle = Math.abs(pAngle - (arrivalAngle + Math.PI * 2) % (Math.PI * 2));
+      if (diffAngle > Math.PI) diffAngle = Math.PI * 2 - diffAngle;
+      if (diffAngle < 0.45) continue;
+
+      const px = Math.cos(pAngle) * railRadius;
+      const pz = Math.sin(pAngle) * railRadius;
+
+      // Wooden Post
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.85, 0.12), timberDarkMat);
+      post.position.set(px, 5.15, pz);
+      post.castShadow = true;
+      hillGroup.add(post);
+    }
+
+    // Circular Top Rail Ring
+    const railRingGeo = new THREE.TorusGeometry(railRadius, 0.045, 6, 24);
+    this.disposables.push(railRingGeo);
+    const railRing = new THREE.Mesh(railRingGeo, timberDarkMat);
+    railRing.rotation.x = Math.PI / 2;
+    railRing.position.y = 5.5;
+    hillGroup.add(railRing);
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 3. OCTAGONAL LOWER STONE TOWER (Spans y: 4.7m to 9.8m)
+    // ─────────────────────────────────────────────────────────────────────────────
+    const towerGeo = new THREE.CylinderGeometry(2.3, 2.9, 5.1, 8);
     this.disposables.push(towerGeo);
-    const tower = new THREE.Mesh(towerGeo, stoneMat);
-    tower.position.y = 3.75;
+    const tower = new THREE.Mesh(towerGeo, towerStoneMat);
+    tower.position.y = 7.25;
     tower.castShadow = true;
     tower.receiveShadow = true;
     hillGroup.add(tower);
 
-    // Wooden dome / cap on top
-    const capGeo = new THREE.ConeGeometry(2.1, 2.4, 12);
-    this.disposables.push(capGeo);
-    const cap = new THREE.Mesh(capGeo, woodMat);
-    cap.position.y = 8.4;
-    cap.castShadow = true;
-    hillGroup.add(cap);
+    // Arched Timber Entrance Doorway (Facing North-West towards player path)
+    const doorGroup = new THREE.Group();
+    doorGroup.rotation.y = arrivalAngle;
 
-    // Central rotor axle hub
+    // Door Frame
+    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.3, 0.28), timberDarkMat);
+    doorFrame.position.set(0, 5.85, 2.65);
+    doorGroup.add(doorFrame);
+
+    // Wooden Door Panel
+    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.1, 0.16), timberCedarMat);
+    doorPanel.position.set(0, 5.85, 2.73);
+    doorGroup.add(doorPanel);
+
+    // Iron Door Handle & Cross-brace
+    const doorKnob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), ironMat);
+    doorKnob.position.set(0.38, 5.85, 2.82);
+    doorGroup.add(doorKnob);
+
+    // Wall Lantern next to doorway
+    const lanternBracket = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.25, 0.35), ironMat);
+    lanternBracket.position.set(0.85, 6.25, 2.65);
+    doorGroup.add(lanternBracket);
+
+    const lanternCage = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.32, 0.2), ironMat);
+    lanternCage.position.set(0.85, 6.15, 2.9);
+    doorGroup.add(lanternCage);
+
+    const lanternBulb = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), lanternGlowMat);
+    lanternBulb.position.set(0.85, 6.15, 2.9);
+    doorGroup.add(lanternBulb);
+
+    hillGroup.add(doorGroup);
+
+    // Mid-tower Windows (East and West sides for scenic daylight reflection)
+    [-Math.PI / 2, Math.PI / 2].forEach(wRot => {
+      const winGroup = new THREE.Group();
+      winGroup.rotation.y = wRot;
+
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.25, 0.2), trimMat);
+      frame.position.set(0, 8.2, 2.45);
+      winGroup.add(frame);
+
+      const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 1.05), windowGlassMat);
+      glass.position.set(0, 8.2, 2.56);
+      winGroup.add(glass);
+
+      hillGroup.add(winGroup);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 4. MID-TOWER CATWALK GALLERY (Observation Balcony at y = 9.8m)
+    // ─────────────────────────────────────────────────────────────────────────────
+    const galleryDeckGeo = new THREE.CylinderGeometry(3.1, 3.1, 0.16, 16);
+    this.disposables.push(galleryDeckGeo);
+    const galleryDeck = new THREE.Mesh(galleryDeckGeo, timberDarkMat);
+    galleryDeck.position.y = 9.8;
+    galleryDeck.castShadow = true;
+    hillGroup.add(galleryDeck);
+
+    // Cantilevered Timber Corbel Brackets underneath balcony
+    for (let c = 0; c < 8; c++) {
+      const cAngle = (c / 8) * Math.PI * 2;
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.65, 0.75), timberDarkMat);
+      bracket.position.set(Math.cos(cAngle) * 2.5, 9.42, Math.sin(cAngle) * 2.5);
+      bracket.rotation.y = cAngle;
+      hillGroup.add(bracket);
+    }
+
+    // Gallery Balcony Perimeter Railing
+    const balcPostCount = 12;
+    for (let bp = 0; bp < balcPostCount; bp++) {
+      const bpAngle = (bp / balcPostCount) * Math.PI * 2;
+      const bPost = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.85, 0.1), timberDarkMat);
+      bPost.position.set(Math.cos(bpAngle) * 2.95, 10.3, Math.sin(bpAngle) * 2.95);
+      hillGroup.add(bPost);
+    }
+
+    const balcRingGeo = new THREE.TorusGeometry(2.95, 0.04, 6, 20);
+    this.disposables.push(balcRingGeo);
+    const balcRing = new THREE.Mesh(balcRingGeo, timberDarkMat);
+    balcRing.rotation.x = Math.PI / 2;
+    balcRing.position.y = 10.7;
+    hillGroup.add(balcRing);
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 5. UPPER TIMBER TOWER BODY (Spans y: 9.8m to 12.8m)
+    // ─────────────────────────────────────────────────────────────────────────────
+    const upperTowerGeo = new THREE.CylinderGeometry(1.7, 2.15, 3.0, 8);
+    this.disposables.push(upperTowerGeo);
+    const upperTower = new THREE.Mesh(upperTowerGeo, timberCedarMat);
+    upperTower.position.y = 11.3;
+    upperTower.castShadow = true;
+    hillGroup.add(upperTower);
+
+    // Decorative White Trim Ring between upper tower and cap roof
+    const trimRing = new THREE.Mesh(new THREE.CylinderGeometry(1.82, 1.82, 0.16, 12), trimMat);
+    trimRing.position.y = 12.85;
+    hillGroup.add(trimRing);
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 6. ROTATING CAP ROOF & PLAYER-FACING LATTICE SAILS
+    // Cap is oriented along arrivalAngle (-135°) so sails FACE the arriving player!
+    // ─────────────────────────────────────────────────────────────────────────────
+    const capAssembly = new THREE.Group();
+    capAssembly.position.y = 12.9;
+    capAssembly.rotation.y = arrivalAngle;
+
+    // Cedar Conical Cap Roof
+    const capRoofGeo = new THREE.ConeGeometry(2.15, 2.5, 8);
+    this.disposables.push(capRoofGeo);
+    const capRoof = new THREE.Mesh(capRoofGeo, timberDarkMat);
+    capRoof.position.y = 1.25;
+    capRoof.castShadow = true;
+    capAssembly.add(capRoof);
+
+    // Ornamental Finial Spire
+    const spireGeo = new THREE.CylinderGeometry(0.05, 0.16, 1.3, 6);
+    this.disposables.push(spireGeo);
+    const spire = new THREE.Mesh(spireGeo, trimMat);
+    spire.position.y = 2.9;
+    capAssembly.add(spire);
+
+    // Rear Auxiliary Fantail (Wind Vane at back of cap)
+    const fantailPole = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 1.4), timberDarkMat);
+    fantailPole.position.set(0, 0.9, -1.9);
+    capAssembly.add(fantailPole);
+
+    const fantailHub = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.12, 8), ironMat);
+    fantailHub.position.set(0, 0.9, -2.6);
+    fantailHub.rotation.x = Math.PI / 2;
+    capAssembly.add(fantailHub);
+
+    for (let f = 0; f < 6; f++) {
+      const fAngle = (f / 6) * Math.PI * 2;
+      const fBlade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.02), trimMat);
+      fBlade.position.set(Math.sin(fAngle) * 0.35, 0.9 + Math.cos(fAngle) * 0.35, -2.6);
+      fBlade.rotation.z = -fAngle;
+      capAssembly.add(fBlade);
+    }
+
+    // Cast-iron Forward Rotor Axle Housing (Menjorok ke depan ke arah pemain)
+    const axleHousing = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.44, 0.9, 12), ironMat);
+    axleHousing.rotation.x = Math.PI / 2;
+    axleHousing.position.set(0, 0.85, 1.55);
+    capAssembly.add(axleHousing);
+
+    // Rotor Axle Hub (Dynamic Rotating Group)
     this.windmillBladesGroup = new THREE.Group();
-    this.windmillBladesGroup.position.set(0, 7.6, 1.9);
+    this.windmillBladesGroup.position.set(0, 0.85, 2.0);
 
-    const hubMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.5, 12), woodMat);
+    const hubMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.4, 12), ironMat);
     hubMesh.rotation.x = Math.PI / 2;
     this.windmillBladesGroup.add(hubMesh);
 
-    // 4 Lattice Sails (blades)
-    const bladeArmGeo = new THREE.BoxGeometry(0.15, 6.4, 0.15);
-    const sailCanvasGeo = new THREE.PlaneGeometry(1.1, 2.6);
+    // 4 High-Detail Lattice Sails (12.4m Total Wingspan)
+    const bladeArmGeo = new THREE.BoxGeometry(0.16, 6.2, 0.16);
+    const sailCanvasGeo = new THREE.PlaneGeometry(1.25, 3.4);
     this.disposables.push(bladeArmGeo, sailCanvasGeo);
 
     for (let b = 0; b < 4; b++) {
-      const angle = (b * Math.PI) / 2;
+      const bAngle = (b * Math.PI) / 2;
       const bladeArm = new THREE.Group();
-      bladeArm.rotation.z = angle;
+      bladeArm.rotation.z = bAngle;
 
-      const spar = new THREE.Mesh(bladeArmGeo, woodMat);
-      spar.position.y = 3.2;
+      // Heavy timber main spar
+      const spar = new THREE.Mesh(bladeArmGeo, timberCedarMat);
+      spar.position.y = 3.1;
       spar.castShadow = true;
       bladeArm.add(spar);
 
-      const sailCloth = new THREE.Mesh(sailCanvasGeo, sailMat);
-      sailCloth.position.set(0.6, 3.8, 0.05);
+      // 5 Horizontal Timber Lattice Ribs
+      for (let rib = 0; rib < 5; rib++) {
+        const ribY = 1.8 + rib * 0.85;
+        const ribMesh = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.05, 0.06), timberDarkMat);
+        ribMesh.position.set(0.65, ribY, 0.02);
+        ribMesh.castShadow = true;
+        bladeArm.add(ribMesh);
+      }
+
+      // Elegantly Tailored Cream Canvas Sail Cloth
+      const sailCloth = new THREE.Mesh(sailCanvasGeo, sailClothMat);
+      sailCloth.position.set(0.68, 3.5, 0.06);
       sailCloth.castShadow = true;
       bladeArm.add(sailCloth);
 
       this.windmillBladesGroup.add(bladeArm);
     }
 
-    hillGroup.add(this.windmillBladesGroup);
+    capAssembly.add(this.windmillBladesGroup);
+    hillGroup.add(capAssembly);
+
     this.group.add(hillGroup);
   }
 
@@ -289,10 +543,10 @@ export class BotanicalMeadow {
     for (let r = -2; r <= 3; r++) {
       const zOffset = r * rowSpacing;
 
-      // Wooden support posts at start, middle, and end
+      // Wooden support posts at start, middle, and end (height 3.2m, sinks 0.35m into ground)
       [-rowLength / 2, 0, rowLength / 2].forEach(x => {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.6, 0.16), postMat);
-        post.position.set(x, 1.3, zOffset);
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.2, 0.16), postMat);
+        post.position.set(x, 1.25, zOffset);
         post.castShadow = true;
         trellisGroup.add(post);
       });
@@ -421,13 +675,13 @@ export class BotanicalMeadow {
       new THREE.Vector3(-35, 0, 14.2)
     ], 30);
 
-    // Path 3: Greenhouse to Windmill Hill (South-East)
-    // Conforms cleanly to elevated hill slopes up to +4.2m
+    // Path 3: Greenhouse to Windmill Hill Terrace Steps (South-East)
+    // Connects seamlessly to the Dutch Windmill stone arrival steps at (34.2, 36.2)
     createPath([
       new THREE.Vector3(0, 0, 7.5),
       new THREE.Vector3(14, 0, 16),
-      new THREE.Vector3(26, 1.8, 28),
-      new THREE.Vector3(36, 4.2, 38)
+      new THREE.Vector3(25, 1.8, 27),
+      new THREE.Vector3(34.2, 4.1, 36.2)
     ], 34);
 
     // Path 4: Greenhouse to Wildflower Sanctuary (North-West)
@@ -465,20 +719,22 @@ export class BotanicalMeadow {
       const tx = Math.cos(angle) * (radius + (t % 3) * 4);
       const tz = Math.sin(angle) * (radius + (t % 3) * 4);
 
+      // Conformal grounding: Anchor tree group directly to procedural perimeter ridge elevation
+      const treeGroundY = BotanicalMeadow.getTerrainHeight(tx, tz);
       const treeGroup = new THREE.Group();
-      treeGroup.position.set(tx, 0, tz);
+      treeGroup.position.set(tx, treeGroundY - 0.25, tz);
 
-      // Trunk
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 3.2, 7), trunkMat);
-      trunk.position.y = 1.6;
+      // Deeply anchored trunk (height 3.6m, sinks 0.3m into ground)
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 3.6, 7), trunkMat);
+      trunk.position.y = 1.8;
       trunk.castShadow = true;
       treeGroup.add(trunk);
 
       // 3 Conical foliage tiers
       [
-        { radius: 2.2, height: 3.2, y: 3.8 },
-        { radius: 1.7, height: 2.8, y: 5.6 },
-        { radius: 1.1, height: 2.2, y: 7.2 }
+        { radius: 2.2, height: 3.2, y: 3.9 },
+        { radius: 1.7, height: 2.8, y: 5.7 },
+        { radius: 1.1, height: 2.2, y: 7.3 }
       ].forEach(tier => {
         const foliage = new THREE.Mesh(new THREE.ConeGeometry(tier.radius, tier.height, 7), pineMat);
         foliage.position.y = tier.y;

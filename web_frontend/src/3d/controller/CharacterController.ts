@@ -296,6 +296,16 @@ export class CharacterController {
       this.velocity.x *= -0.3;
       this.velocity.z *= -0.3;
     }
+
+    // Windmill Tower Core Solid Collision (Center x=38, z=40, tower stone radius 2.9m)
+    const distToWindmill = Math.hypot(this.position.x - 38, this.position.z - 40);
+    if (distToWindmill < 2.95) {
+      const angle = Math.atan2(this.position.z - 40, this.position.x - 38);
+      this.position.x = 38 + Math.cos(angle) * 3.0;
+      this.position.z = 40 + Math.sin(angle) * 3.0;
+      this.velocity.x *= -0.3;
+      this.velocity.z *= -0.3;
+    }
   }
 
   public getZoneName(isInsideGreenhouse: boolean): string {

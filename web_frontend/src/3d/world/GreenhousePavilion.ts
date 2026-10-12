@@ -34,7 +34,17 @@ export class GreenhousePavilion {
   }
 
   private buildTerracottaFloor(): void {
-    // Terracotta tiled base - raised to y = 0.06 with top face at y = 0.14 to eliminate z-fighting
+    // 1. Deep Sub-Surface Concrete Footing (extends down to y = -0.50m to anchor firmly into terrain)
+    const footingMat = new THREE.MeshStandardMaterial({ color: 0x383838, roughness: 0.9 });
+    this.disposables.push(footingMat);
+    const footingGeo = new THREE.BoxGeometry(GreenhousePavilion.WIDTH + 0.6, 0.64, GreenhousePavilion.DEPTH + 0.6);
+    this.disposables.push(footingGeo);
+    const footing = new THREE.Mesh(footingGeo, footingMat);
+    footing.position.set(0, -0.20, 0); // Spans y: -0.52m to +0.12m
+    footing.receiveShadow = true;
+    this.group.add(footing);
+
+    // 2. Terracotta tiled base - raised to y = 0.06 with top face at y = 0.14
     const floorGeo = new THREE.BoxGeometry(GreenhousePavilion.WIDTH, 0.16, GreenhousePavilion.DEPTH);
     this.disposables.push(floorGeo);
 
@@ -52,6 +62,14 @@ export class GreenhousePavilion {
     floor.position.set(0, 0.06, 0);
     floor.receiveShadow = true;
     this.group.add(floor);
+
+    // 3. South Doorway Welcome Threshold (connects terracotta floor to outdoor pathway)
+    const thresholdGeo = new THREE.BoxGeometry(4.8, 0.16, 1.4);
+    this.disposables.push(thresholdGeo);
+    const threshold = new THREE.Mesh(thresholdGeo, floorMat);
+    threshold.position.set(0, 0.04, GreenhousePavilion.DEPTH / 2 + 0.6);
+    threshold.receiveShadow = true;
+    this.group.add(threshold);
 
     // Decorative perimeter curb / base foundation
     const curbMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.8 });
