@@ -3,12 +3,26 @@ from src.presentation.api import ml_service, MAX_FILE_SIZE_BYTES
 
 
 class TestApiEndpoints:
-    def test_should_return_service_info_when_root_endpoint_called(self, client):
-        response = client.get("/")
+    def test_should_return_html_portal_when_browser_accesses_root(self, client):
+        response = client.get("/", headers={"accept": "text/html,application/xhtml+xml"})
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "AgriVision AI" in response.text
+        assert "Tomato Leaf Disease" in response.text
+
+    def test_should_return_json_when_api_client_accesses_root(self, client):
+        response = client.get("/", headers={"accept": "application/json"})
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "online"
         assert "endpoints" in data
+
+    def test_should_return_custom_dark_swagger_docs(self, client):
+        response = client.get("/docs")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "swagger-ui" in response.text
+        assert "Outfit" in response.text
 
     def test_should_return_healthy_status_when_health_endpoint_called(self, client):
         response = client.get("/health")

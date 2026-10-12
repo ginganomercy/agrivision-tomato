@@ -1,6 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from contextlib import asynccontextmanager
@@ -14,6 +14,7 @@ from typing import Dict, Any
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from src.application.inference_service import InferenceService
 from src.infrastructure.snowflake import generate_snowflake_id, generate_trace_id
+from src.presentation.templates import render_portal_html, render_swagger_docs_html
 
 # Security & Validation Constants (Production Hardening)
 MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 Megabytes
@@ -62,7 +63,9 @@ app = FastAPI(
     title="AgriVision API",
     description="Production-grade API untuk deteksi penyakit daun tomat berbasis MobileNetV2.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None
 )
 
 # CORS Middleware Configuration
@@ -103,19 +106,34 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-@app.get("/")
-async def root():
-    """Root endpoint untuk navigasi browser dan pemeriksaan ketersediaan service."""
-    return {
-        "service": "AgriVision Tomato Disease Classifier API",
-        "version": "1.0.0",
-        "status": "online",
-        "endpoints": {
-            "health": "/health",
-            "documentation": "/docs",
-            "predict": "/v1/predict (POST)"
-        }
-    }
+@app.get("/", include_in_schema=False)
+async def root_portal(request: Request):
+    """
+    Developer Portal & Live Leaf Disease Diagnostics Playground.
+    Mendukung Content Negotiation (HTML untuk Browser, JSON untuk programmatic API client).
+    """
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header and "text/html" not in accept_header:
+        return JSONResponse({
+            "service": "AgriVision Tomato Disease Classifier API",
+            "version": "1.0.0",
+            "status": "online",
+            "endpoints": {
+                "health": "/health",
+                "documentation": "/docs",
+                "predict": "/v1/predict (POST)"
+            }
+        })
+    return HTMLResponse(content=render_portal_html(), status_code=200)
+
+
+@app.get("/docs", response_class=HTMLResponse, include_in_schema=False)
+async def custom_swagger_docs():
+    """Interactive Swagger UI Documentation dengan tema Modern Dark Glassmorphism."""
+    return HTMLResponse(
+        content=render_swagger_docs_html(title="AgriVision API Docs", openapi_url="/openapi.json"),
+        status_code=200
+    )
 
 
 @app.get("/health")
