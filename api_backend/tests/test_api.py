@@ -3,6 +3,13 @@ from src.presentation.api import ml_service, MAX_FILE_SIZE_BYTES
 
 
 class TestApiEndpoints:
+    def test_should_return_service_info_when_root_endpoint_called(self, client):
+        response = client.get("/")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "online"
+        assert "endpoints" in data
+
     def test_should_return_healthy_status_when_health_endpoint_called(self, client):
         response = client.get("/health")
         assert response.status_code == 200

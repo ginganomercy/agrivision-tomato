@@ -103,6 +103,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+@app.get("/")
+async def root():
+    """Root endpoint untuk navigasi browser dan pemeriksaan ketersediaan service."""
+    return {
+        "service": "AgriVision Tomato Disease Classifier API",
+        "version": "1.0.0",
+        "status": "online",
+        "endpoints": {
+            "health": "/health",
+            "documentation": "/docs",
+            "predict": "/v1/predict (POST)"
+        }
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Liveness & Readiness probe untuk Docker Swarm & Ingress."""
