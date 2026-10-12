@@ -1,31 +1,32 @@
 # ==============================================================================
 # Multi-Stage Production Dockerfile for AgriVision Web Frontend (React + Three.js)
+# Menggunakan Bun versi stabil terbaru (Tier-1 Linux glibc) sebagai Builder
 # ==============================================================================
 
-# STAGE 1: Build Assets with Bun
-FROM oven/bun:1.1.42-alpine AS builder
+# STAGE 1: Build Assets with Bun (Latest Stable 1.x)
+FROM oven/bun:1 AS builder
 WORKDIR /app
 
-# Salin dependencies manifest
+# Salin package.json
 COPY package.json ./
 
-# Install dependencies dengan reproducible lockfile check
+# Install dependensi menggunakan Bun secara murni di lingkungan Linux
 RUN bun install
 
-# Salin source code
+# Salin seluruh source code (node_modules host dikecualikan via .dockerignore)
 COPY . .
 
 # Jalankan production build (TypeScript strict check + Vite 8 minify)
 RUN bun run build
 
-# STAGE 2: Lightweight Production Runtime via Nginx Alpine
+# STAGE 2: Lightweight Production Runtime via Nginx Alpine (~25 MB)
 FROM nginx:alpine
 WORKDIR /usr/share/nginx/html
 
-# Bersihkan konfigurasi default Nginx
+# Bersihkan konfigurasi bawaan Nginx
 RUN rm -rf /etc/nginx/conf.d/*
 
-# Salin konfigurasi custom Nginx SPA
+# Salin konfigurasi custom Nginx SPA (HTML5 routing, gzip, cache control)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Salin artefak hasil build dari builder
