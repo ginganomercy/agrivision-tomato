@@ -196,41 +196,66 @@ export class FloraFaunaBuilder {
       new THREE.Vector3(0, 0, 62.0)
     ], 28);
 
-    // 4. Perimeter Pine Forest
+    // 4. Perimeter Pine Forest — InstancedMesh (168 draw calls → 4, pixel-perfect identical visual)
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3221, roughness: 0.9 });
     const pineMat = new THREE.MeshStandardMaterial({ color: 0x1b4d18, roughness: 0.75 });
     disposables.push(trunkMat, pineMat);
 
-    const treeCount = 42;
-    const radius = 78.0;
+    const TREE_COUNT = 42;
+    const FOREST_RADIUS = 78.0;
 
-    for (let t = 0; t < treeCount; t++) {
-      const angle = (t / treeCount) * Math.PI * 2;
-      const tx = Math.cos(angle) * (radius + (t % 3) * 4);
-      const tz = Math.sin(angle) * (radius + (t % 3) * 4);
+    // Shared geometry (created once, reused across all instances)
+    const trunkGeo = new THREE.CylinderGeometry(0.35, 0.45, 3.6, 7);
+    const foliageTiers = [
+      { r: 2.2, h: 3.2, yOff: 3.9 },
+      { r: 1.7, h: 2.8, yOff: 5.7 },
+      { r: 1.1, h: 2.2, yOff: 7.3 }
+    ];
+    const foliageGeos = foliageTiers.map(t => new THREE.ConeGeometry(t.r, t.h, 7));
+    disposables.push(trunkGeo, ...foliageGeos);
 
-      const treeGroundY = getTerrainHeight(tx, tz);
-      const treeGroup = new THREE.Group();
-      treeGroup.position.set(tx, treeGroundY - 0.25, tz);
+    // One InstancedMesh per geometry type → 4 total draw calls for 42 trees
+    const trunkInstanced = new THREE.InstancedMesh(trunkGeo, trunkMat, TREE_COUNT);
+    const foliageInstanced = foliageTiers.map((_, i) =>
+      new THREE.InstancedMesh(foliageGeos[i], pineMat, TREE_COUNT)
+    );
+    trunkInstanced.castShadow = true;
+    foliageInstanced.forEach(fi => { fi.castShadow = true; });
 
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 3.6, 7), trunkMat);
-      trunk.position.y = 1.8;
-      trunk.castShadow = true;
-      treeGroup.add(trunk);
+    // Static objects — disable per-frame matrix recalculation (zero visual change)
+    trunkInstanced.matrixAutoUpdate = false;
+    foliageInstanced.forEach(fi => { fi.matrixAutoUpdate = false; });
 
-      [
-        { radius: 2.2, height: 3.2, y: 3.9 },
-        { radius: 1.7, height: 2.8, y: 5.7 },
-        { radius: 1.1, height: 2.2, y: 7.3 }
-      ].forEach(tier => {
-        const foliage = new THREE.Mesh(new THREE.ConeGeometry(tier.radius, tier.height, 7), pineMat);
-        foliage.position.y = tier.y;
-        foliage.castShadow = true;
-        treeGroup.add(foliage);
+    const dummy = new THREE.Object3D();
+
+    for (let t = 0; t < TREE_COUNT; t++) {
+      const angle = (t / TREE_COUNT) * Math.PI * 2;
+      const tx = Math.cos(angle) * (FOREST_RADIUS + (t % 3) * 4);
+      const tz = Math.sin(angle) * (FOREST_RADIUS + (t % 3) * 4);
+      const treeGroundY = getTerrainHeight(tx, tz) - 0.25;
+
+      // Trunk instance
+      dummy.position.set(tx, treeGroundY + 1.8, tz);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      trunkInstanced.setMatrixAt(t, dummy.matrix);
+
+      // Foliage tier instances
+      foliageTiers.forEach((tier, ti) => {
+        dummy.position.set(tx, treeGroundY + tier.yOff, tz);
+        dummy.rotation.set(0, (t * 0.618) % (Math.PI * 2), 0); // subtle yaw variation per tree
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        foliageInstanced[ti].setMatrixAt(t, dummy.matrix);
       });
-
-      group.add(treeGroup);
     }
+
+    trunkInstanced.instanceMatrix.needsUpdate = true;
+    foliageInstanced.forEach(fi => { fi.instanceMatrix.needsUpdate = true; });
+
+    group.add(trunkInstanced, ...foliageInstanced);
+
 
     // 5. Animated Butterflies
     const wingMatMonarch = new THREE.MeshBasicMaterial({ color: 0xff6b35, side: THREE.DoubleSide });

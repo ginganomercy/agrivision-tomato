@@ -43,7 +43,7 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       const h = canvas.height;
       const cx = w / 2;
       const cy = h / 2;
-      const worldRadius = 84.0;
+      const worldRadius = 122.0; // Updated for 260m world expansion
       const pad = 10;
       const scale = (cx - pad) / worldRadius;
 
@@ -63,8 +63,8 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       ctx.fillStyle = bgGrad;
       ctx.fill();
 
-      // 2. Concentric Radar Distance Rings
-      const rings = [28, 56, 80];
+      // 2. Concentric Radar Distance Rings (updated for 122m world radius)
+      const rings = [40, 80, 115];
       ctx.lineWidth = 1;
       rings.forEach((rDist, idx) => {
         ctx.beginPath();
@@ -97,8 +97,8 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       const mapX = (x: number) => cx + x * scale;
       const mapY = (z: number) => cy + z * scale;
 
-      // 4. Cartographic 5 Thematic Zones
-      // Zone 4: South-West Irrigation Lake (-35, 35)
+      // 4. Cartographic Zone Markers (9 zones total)
+      // Zone: South-West Irrigation Lake (-35, 35)
       const lakeX = mapX(-35);
       const lakeY = mapY(35);
       const lakeR = 20 * scale;
@@ -110,7 +110,7 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       ctx.lineWidth = 1.2;
       ctx.stroke();
 
-      // Wooden Pier line on lake shore
+      // Lake pier
       ctx.beginPath();
       ctx.moveTo(mapX(-35), mapY(16.5));
       ctx.lineTo(mapX(-35), mapY(25.5));
@@ -118,7 +118,7 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
-      // Zone 2: North-East Commercial Trellis Rows (35, -32)
+      // Zone: North-East Commercial Trellis Rows (35, -32)
       for (let tr = -2; tr <= 2; tr++) {
         const rowZ = mapY(-32 + tr * 4.2);
         ctx.beginPath();
@@ -129,7 +129,7 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
         ctx.stroke();
       }
 
-      // Zone 3: North-West Wildflower Sanctuary (-35, -35)
+      // Zone: North-West Wildflower Sanctuary (-35, -35)
       ctx.beginPath();
       ctx.arc(mapX(-35), mapY(-35), 14 * scale, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(168, 85, 247, 0.28)';
@@ -138,7 +138,7 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Zone 5: South-East Windmill Hill (38, 40)
+      // Zone: South-East Windmill Hill (38, 40)
       ctx.beginPath();
       ctx.arc(mapX(38), mapY(40), 16 * scale, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(217, 119, 6, 0.25)';
@@ -147,7 +147,7 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Zone 1: Central Greenhouse Laboratory (0, 0)
+      // Zone: Central Greenhouse Laboratory (0, 0)
       const ghW = 18 * scale;
       const ghH = 14 * scale;
       ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
@@ -158,6 +158,86 @@ export const MiniMapRadar: React.FC<MiniMapRadarProps> = ({
       ctx.fillStyle = '#A7F3D0';
       ctx.font = 'bold 7px monospace';
       ctx.fillText('LAB', cx, cy);
+
+      // ── NEW BIOME ZONES (Sprint 1 Expansion) ──
+
+      // Zone: Ancient Ruins (0, -65) — dark stone purple
+      const ruinsX = mapX(0);
+      const ruinsY = mapY(-65);
+      ctx.beginPath();
+      ctx.arc(ruinsX, ruinsY, 20 * scale, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(100, 90, 130, 0.38)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(200, 180, 255, 0.7)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Crystal altar marker
+      ctx.fillStyle = 'rgba(136, 255, 200, 0.9)';
+      ctx.beginPath();
+      ctx.arc(ruinsX, ruinsY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(200, 180, 255, 0.85)';
+      ctx.font = 'bold 7px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('🏛️ RUINS', ruinsX, ruinsY + 18 * scale + 9);
+
+      // Zone: Rice Field (80, 10) — golden yellow
+      const riceX = mapX(80);
+      const riceY = mapY(10);
+      ctx.fillStyle = 'rgba(180, 160, 20, 0.32)';
+      ctx.fillRect(riceX - 22 * scale, riceY - 32 * scale, 44 * scale, 64 * scale);
+      ctx.strokeStyle = 'rgba(212, 160, 23, 0.75)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(riceX - 22 * scale, riceY - 32 * scale, 44 * scale, 64 * scale);
+      // Canal line
+      ctx.beginPath();
+      ctx.moveTo(riceX - 18 * scale, riceY - 28 * scale);
+      ctx.lineTo(riceX - 18 * scale, riceY + 28 * scale);
+      ctx.strokeStyle = 'rgba(56, 140, 200, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(212, 160, 23, 0.85)';
+      ctx.font = 'bold 7px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('🌾 SAWAH', riceX, riceY - 32 * scale - 6);
+
+      // Zone: Mushroom Forest (-80, 10) — deep purple
+      const mxMap = mapX(-80);
+      const myMap = mapY(10);
+      ctx.beginPath();
+      ctx.arc(mxMap, myMap, 24 * scale, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(80, 20, 120, 0.38)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(160, 80, 240, 0.7)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Cave marker
+      ctx.fillStyle = 'rgba(180, 100, 255, 0.85)';
+      ctx.beginPath();
+      ctx.arc(mxMap + 14 * scale, myMap + 8 * scale, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(160, 80, 240, 0.85)';
+      ctx.font = 'bold 7px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('🍄 JAMUR', mxMap, myMap - 24 * scale - 6);
+
+      // Zone: Harvest Bazaar (0, 80) — warm orange
+      const bzX = mapX(0);
+      const bzY = mapY(80);
+      ctx.fillStyle = 'rgba(180, 100, 20, 0.32)';
+      ctx.fillRect(bzX - 30 * scale, bzY - 22 * scale, 60 * scale, 40 * scale);
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.75)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bzX - 30 * scale, bzY - 22 * scale, 60 * scale, 40 * scale);
+      // Fountain center dot
+      ctx.fillStyle = 'rgba(255, 200, 80, 0.9)';
+      ctx.beginPath();
+      ctx.arc(bzX, bzY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
+      ctx.font = 'bold 7px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('🏪 BAZAAR', bzX, bzY + 22 * scale + 9);
 
       // 5. Active Golden Collectibles
       const items = engineRef.current?.getActiveCollectibles() || [];

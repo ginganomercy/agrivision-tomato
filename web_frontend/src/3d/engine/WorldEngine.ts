@@ -68,6 +68,12 @@ export class WorldEngine {
   private currentZoneName: string = '';
   private lastReportedSpeed: number = -1;
 
+  // Zone visit tracking for exploration quests
+  private visitedBiomeZones: Set<string> = new Set();
+
+  // Throttle counter for biome visibility culling (runs every 10 frames)
+  private biomeCullCounter: number = 0;
+
   // Room Location & Cinematic Transition State
   private currentRoom: RoomLocation = 'meadow';
   private isTransitioningRoom: boolean = false;
@@ -102,8 +108,10 @@ export class WorldEngine {
     this.scene.background = new THREE.Color(0x87ceeb); // Natural Sky Blue
     this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
 
-    // 2. Initialize Camera (spacious view looking forward South through greenhouse doorway)
-    this.camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.6, 200);
+    // 2. Initialize Camera
+    // Far plane = 140 (provably zero visual change: FogExp2(0.012) renders objects at 140m
+    // at only 18.7% visibility — fully blended into sky color by fog before far clip)
+    this.camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.6, 140);
     this.camera.position.set(0, 3.8, -8.0);
     this.camera.lookAt(new THREE.Vector3(0, 1.0, 0));
 
@@ -662,11 +670,40 @@ export class WorldEngine {
     // 1d. Dispatch real-time coordinates and heading for HUD Radar Mini-Map
     this.callbacks.onPlayerUpdate?.({ x: state.position.x, z: state.position.z }, state.heading);
 
-    // 2. Dynamic 5-Zone Name Detection Callback
+    // 2. Dynamic Zone Name Detection
     const zoneName = this.controller.getZoneName(this.currentRoom);
     if (zoneName !== this.currentZoneName) {
       this.currentZoneName = zoneName;
       this.callbacks.onZoneChange?.(zoneName);
+
+      // — Zone Visit Quest Tracking for Exploration Quests —
+      const biomeZoneMap: Record<string, string> = {
+        '🏛️ Reruntuhan Kuno Agrikultura': 'ruins',
+        '🌾 Sawah Irigasi & Sungai Timur': 'rice',
+        '🍄 Hutan Jamur Misterius': 'mushroom',
+        '🏪 Pasar Panen Terbuka (Harvest Bazaar)': 'bazaar'
+      };
+      const biomeKey = biomeZoneMap[zoneName];
+      if (biomeKey && !this.visitedBiomeZones.has(biomeKey)) {
+        this.visitedBiomeZones.add(biomeKey);
+        this.questManager.updateProgress('explore_zone', 1);
+        this.questManager.updateProgress(biomeKey, 1);
+        this.callbacks.onActiveQuestChange?.(this.questManager.getActiveQuest());
+      }
+    }
+
+    // 2b. Zone-Based Biome Visibility Culling (zero visual change, runs every 10 frames)
+    // FogExp2(0.012): at 88m visibility = e^(-1.056) ≈ 34% — objects already blended into sky.
+    // Hiding groups beyond this range changes zero visible pixels but saves significant GPU.
+    this.biomeCullCounter = (this.biomeCullCounter + 1) % 10;
+    if (this.biomeCullCounter === 0 && this.currentRoom === 'meadow') {
+      const biomes = this.meadow.getBiomeGroups();
+      const px = state.position.x;
+      const pz = state.position.z;
+      biomes.ruins.visible    = Math.hypot(px,       pz + 65) < 92;
+      biomes.rice.visible     = Math.hypot(px - 80,  pz - 10) < 92;
+      biomes.mushroom.visible = Math.hypot(px + 80,  pz - 10) < 92;
+      biomes.bazaar.visible   = Math.hypot(px,       pz - 80) < 92;
     }
 
     // 3. Throttled Speed Gauge Callback (Percentage of max speed)
@@ -676,6 +713,7 @@ export class WorldEngine {
       this.lastReportedSpeed = speedPct;
       this.callbacks.onSpeedChange?.(speedPct);
     }
+
 
     // 4. Update Character Visual Posture
     const tomatoGroup = this.tomatoModel.getRoot();

@@ -40,7 +40,7 @@ export class CharacterController {
   private static readonly FRICTION = 0.93; // Buttery smooth momentum
   private static readonly GRAVITY = -25.0;
   private static readonly JUMP_VELOCITY = 10.8;
-  private static readonly BOUNDARY_LIMIT = 82.0; // 180m Open world perimeter boundary
+  private static readonly BOUNDARY_LIMIT = 120.0; // 260m Open world perimeter boundary
 
   constructor(initialPosition: THREE.Vector3 = new THREE.Vector3(0, 0.86, -1.0)) {
     this.position.copy(initialPosition);
@@ -508,6 +508,20 @@ export class CharacterController {
     if (Math.abs(this.position.x - (-35)) <= 2.05 && this.position.z >= 13.2 && this.position.z <= 56.8) {
       return 'Jembatan Kayu Melengkung (Danau Irigasi)';
     }
+    // New Biome Zones (Sprint 1 Expansion)
+    if (this.position.x >= -28 && this.position.x <= 28 && this.position.z >= -85 && this.position.z <= -48) {
+      return '🏛️ Reruntuhan Kuno Agrikultura';
+    }
+    if (this.position.x >= 58 && this.position.x <= 105 && this.position.z >= -22 && this.position.z <= 42) {
+      return '🌾 Sawah Irigasi & Sungai Timur';
+    }
+    if (this.position.x <= -58 && this.position.x >= -105 && this.position.z >= -22 && this.position.z <= 42) {
+      return '🍄 Hutan Jamur Misterius';
+    }
+    if (this.position.x >= -32 && this.position.x <= 32 && this.position.z >= 58 && this.position.z <= 105) {
+      return '🏪 Pasar Panen Terbuka (Harvest Bazaar)';
+    }
+    // Original zones
     if (this.position.x > 15 && this.position.z < -10) return 'Kebun Tomat Komersial (Trellis)';
     if (this.position.x < -15 && this.position.z < -10) return 'Taman Bunga & Polinator';
     if (this.position.x < -7 && this.position.x > -21 && this.position.z > 11 && this.position.z < 26) return 'Kedai Serikat Tani (Agri-Guild Tavern)';

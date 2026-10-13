@@ -1,11 +1,15 @@
 /**
- * BotanicalMeadow - Expansive Living Botanical Open-World (180m x 180m)
- * Features 5 distinct agricultural & natural zones:
+ * BotanicalMeadow - Expansive Living Botanical Open-World (260m x 260m)
+ * Features 9 distinct agricultural & natural zones:
  * 1. Central Laboratory & Greenhouse Pavilion
  * 2. Commercial Heirloom Trellis Rows (East Orchard)
  * 3. Wildflower Pollinator Meadow with Animated Butterflies (West Sanctuary)
  * 4. Irrigation Reservoir Lake with Water Lilies & Wooden Dock (South-West)
  * 5. Elevated Windmill Hill with Rotating Blades (South-East)
+ * 6. Ancient Agricultural Ruins (North) — Stone pillars & rune altars
+ * 7. Sawah Irigasi & Sungai Mengalir (Far East)
+ * 8. Hutan Jamur Misterius (Far West) — Glowing spores & cave
+ * 9. Pasar Panen Terbuka / Harvest Bazaar (South-Center)
  * Plus outer pine tree forest perimeter, drifting cumulus clouds, and golden pollen spores.
  */
 import * as THREE from 'three';
@@ -13,6 +17,10 @@ import { LakeAndBridgeBuilder } from './meadow/LakeAndBridgeBuilder';
 import { GuildTavernExteriorBuilder } from './meadow/GuildTavernExteriorBuilder';
 import { WindmillBuilder } from './meadow/WindmillBuilder';
 import { FloraFaunaBuilder, type Butterfly } from './meadow/FloraFaunaBuilder';
+import { AncientRuinsBuilder } from './meadow/AncientRuinsBuilder';
+import { RiceFieldBuilder } from './meadow/RiceFieldBuilder';
+import { MushroomForestBuilder } from './meadow/MushroomForestBuilder';
+import { HarvestBazaarBuilder } from './meadow/HarvestBazaarBuilder';
 
 export class BotanicalMeadow {
   private group: THREE.Group;
@@ -29,9 +37,15 @@ export class BotanicalMeadow {
   private tavernDoorHingeGroup!: THREE.Group;
   private tavernDoorRotation: number = 0;
 
+  // Biome zone groups — exposed for zone-based visibility culling
+  private ruinsGroup!: THREE.Group;
+  private riceGroup!: THREE.Group;
+  private mushroomGroup!: THREE.Group;
+  private bazaarGroup!: THREE.Group;
+
   // Spatial boundaries (meters)
-  public static readonly MEADOW_SIZE = 180; // 180x180m open world
-  public static readonly BOUNDARY_RADIUS = 84.0;
+  public static readonly MEADOW_SIZE = 260; // 260x260m open world
+  public static readonly BOUNDARY_RADIUS = 122.0;
 
   constructor() {
     this.group = new THREE.Group();
@@ -60,6 +74,33 @@ export class BotanicalMeadow {
     this.particlePoints = floraFauna.particlePoints;
     this.particlePositions = floraFauna.particlePositions;
     this.group.add(floraFauna.group);
+
+    // 6. New Biome Zones (Sprint 1 Expansion)
+    // 6a. Ancient Agricultural Ruins (North: x∈[-25,25], z∈[-80,-50])
+    this.ruinsGroup = AncientRuinsBuilder.build(this.disposables);
+    this.group.add(this.ruinsGroup);
+
+    // 6b. Sawah Irigasi & Sungai (Far East: x∈[60,100], z∈[-20,40])
+    this.riceGroup = RiceFieldBuilder.build(this.disposables);
+    this.group.add(this.riceGroup);
+
+    // 6c. Hutan Jamur Misterius (Far West: x∈[-100,-60], z∈[-20,40])
+    this.mushroomGroup = MushroomForestBuilder.build(this.disposables);
+    this.group.add(this.mushroomGroup);
+
+    // 6d. Pasar Panen Terbuka (South-Center: x∈[-30,30], z∈[60,100])
+    this.bazaarGroup = HarvestBazaarBuilder.build(this.disposables);
+    this.group.add(this.bazaarGroup);
+  }
+
+  // Zone group accessors for visibility culling by WorldEngine
+  public getBiomeGroups(): { ruins: THREE.Group; rice: THREE.Group; mushroom: THREE.Group; bazaar: THREE.Group } {
+    return {
+      ruins: this.ruinsGroup,
+      rice: this.riceGroup,
+      mushroom: this.mushroomGroup,
+      bazaar: this.bazaarGroup
+    };
   }
 
   public getRoot(): THREE.Group {
@@ -92,15 +133,39 @@ export class BotanicalMeadow {
       return (1.0 - Math.sqrt(hillDistSq)) * 4.5;
     }
 
-    // 4. Perimeter Mountain Ridge around map edge (r > 68m)
+    // 4. North Ancient Ruins – flat plateau with slight ancient sunken depression
+    if (x >= -28 && x <= 28 && z >= -85 && z <= -48) {
+      const ruinDist = Math.hypot(x / 28, (z + 65) / 18);
+      if (ruinDist < 1.0) return -0.12 + Math.sin(x * 0.3) * Math.cos(z * 0.3) * 0.08;
+      return 0.1 + Math.sin(x * 0.12) * Math.cos(z * 0.12) * 0.15;
+    }
+
+    // 5. Far East Sawah – flat floodplain (paddy field needs level ground)
+    if (x >= 58 && x <= 105 && z >= -22 && z <= 42) {
+      return -0.05 + Math.sin(x * 0.08) * Math.cos(z * 0.08) * 0.06;
+    }
+
+    // 6. Far West Mushroom Forest – gently rolling hills
+    if (x >= -105 && x <= -58 && z >= -22 && z <= 42) {
+      const mxRel = (x + 80) / 22;
+      const mzRel = (z + 0) / 22;
+      return 0.2 + Math.sin(mxRel * Math.PI) * Math.cos(mzRel * Math.PI) * 0.8;
+    }
+
+    // 7. South Harvest Bazaar – mild cobblestone plaza (slightly elevated)
+    if (x >= -32 && x <= 32 && z >= 58 && z <= 105) {
+      return 0.05 + Math.sin(x * 0.2) * Math.cos(z * 0.2) * 0.04;
+    }
+
+    // 8. Perimeter Mountain Ridge around map edge (r > 108m)
     const distFromCenter = Math.hypot(x, z);
-    if (distFromCenter > 68) {
-      const outerRise = Math.pow((distFromCenter - 68) / 18, 2) * 6.5;
-      const wave = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 1.5;
+    if (distFromCenter > 108) {
+      const outerRise = Math.pow((distFromCenter - 108) / 14, 2) * 8.0;
+      const wave = Math.sin(x * 0.06) * Math.cos(z * 0.06) * 2.0;
       return outerRise + wave;
     }
 
-    // 5. Gentle undulating agricultural terrain
+    // 9. Gentle undulating agricultural terrain
     return Math.sin(x * 0.05) * Math.cos(z * 0.05) * 0.35;
   }
 
@@ -169,6 +234,21 @@ export class BotanicalMeadow {
       return 0.45;
     }
 
+    // 4. Harvest Bazaar central plaza floor (flat cobblestone y=0.08)
+    if (x >= -30 && x <= 30 && z >= 60 && z <= 98) {
+      return 0.08;
+    }
+
+    // 5. Ancient Ruins altar platform (x∈[-6,6], z∈[-72,-60])
+    if (Math.abs(x) <= 6.5 && z >= -72 && z <= -60) {
+      return 0.22; // Altar platform stone floor
+    }
+
+    // 6. Rice Field paddy plots – flat field surface for walking between rows
+    if (x >= 60 && x <= 102 && z >= -18 && z <= 38) {
+      return 0.0; // Flooded paddy floor
+    }
+
     // Default to natural procedural terrain elevation
     return BotanicalMeadow.getTerrainHeight(x, z);
   }
@@ -177,7 +257,7 @@ export class BotanicalMeadow {
    * Constructs procedurally contoured 180m terrain with lake basin and windmill hill
    */
   private buildExpansiveTerrain(): void {
-    const segs = 64;
+    const segs = 96; // Increased from 64 for higher detail on expanded 260m terrain
     const terrainGeo = new THREE.PlaneGeometry(BotanicalMeadow.MEADOW_SIZE, BotanicalMeadow.MEADOW_SIZE, segs, segs);
     terrainGeo.rotateX(-Math.PI / 2);
 
