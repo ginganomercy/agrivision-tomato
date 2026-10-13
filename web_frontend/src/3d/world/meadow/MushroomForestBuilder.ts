@@ -89,7 +89,7 @@ export class MushroomForestBuilder {
     mushrooms.forEach(m => byColor[m.capIdx].push(m));
 
     // Shared gill materials — one per cap color (not one per mushroom)
-    const gillMats = mushroomCapColors.map((c, ci) => {
+    const gillMats = mushroomCapColors.map((c) => {
       const m = new THREE.MeshStandardMaterial({
         color: c, emissive: c, emissiveIntensity: 0.08,
         side: THREE.BackSide, roughness: 0.85
