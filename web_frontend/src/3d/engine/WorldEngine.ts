@@ -27,6 +27,17 @@ import { GuildTavernInterior } from '../world/GuildTavernInterior';
 import { QuestManager } from '../world/QuestManager';
 import { NPCManager } from '../world/NPCManager';
 
+// Render & Lighting Tuning Constants (No Magic Numbers)
+const MOBILE_AMBIENT_LIGHT_INTENSITY = 0.58;
+const DESKTOP_AMBIENT_LIGHT_INTENSITY = 0.35;
+const MOBILE_HEMI_LIGHT_INTENSITY = 1.15;
+const DESKTOP_HEMI_LIGHT_INTENSITY = 0.95;
+const SUN_LIGHT_INTENSITY = 1.4;
+const SUN_SHADOW_FRUSTUM_SIZE = 32;
+const SUN_SHADOW_MAP_SIZE = 2048;
+const MOBILE_TARGET_DPR = 1.15;
+const DESKTOP_TARGET_DPR = 1.5;
+
 export class WorldEngine {
   // Core Three.js components
   private container: HTMLElement | null = null;
@@ -85,6 +96,12 @@ export class WorldEngine {
   private orbitTheta: number = 0;
   private orbitPhi: number = 0.55;
   private orbitRadius: number = 8.0;
+
+  // Pre-allocated scratch objects for zero-allocation tick & camera updates (eliminates GC jank)
+  private readonly _scratchCamForward = new THREE.Vector3();
+  private readonly _scratchCamRight = new THREE.Vector3();
+  private readonly _worldUp = new THREE.Vector3(0, 1, 0);
+  private readonly _scratchLookTarget = new THREE.Vector3();
 
   /**
    * Evaluates if current client is a touch mobile device for adaptive rendering
@@ -181,33 +198,36 @@ export class WorldEngine {
   }
 
   private setupLighting(): void {
-    // Hemisphere Light (natural sky sunlight & warm ground reflection)
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d702a, 0.95);
+    const isMobile = WorldEngine.isMobileDevice();
+
+    // Hemisphere Light (natural sky sunlight & warm ground reflection, boosted on mobile for vibrancy)
+    const hemiIntensity = isMobile ? MOBILE_HEMI_LIGHT_INTENSITY : DESKTOP_HEMI_LIGHT_INTENSITY;
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x3d702a, hemiIntensity);
     hemiLight.position.set(0, 40, 0);
     this.scene.add(hemiLight);
 
     // Sun Directional Light with Dynamic Player-Centric Shadow Frustum
-    this.sunLight = new THREE.DirectionalLight(0xfff5e6, 1.4);
+    this.sunLight = new THREE.DirectionalLight(0xfff5e6, SUN_LIGHT_INTENSITY);
     this.sunLight.position.set(22, 45, 18);
-    this.sunLight.castShadow = true;
-    const isMobile = WorldEngine.isMobileDevice();
-    const shadowMapSize = isMobile ? 1024 : 2048;
-    this.sunLight.shadow.mapSize.width = shadowMapSize;
-    this.sunLight.shadow.mapSize.height = shadowMapSize;
-    this.sunLight.shadow.camera.near = 0.5;
-    this.sunLight.shadow.camera.far = 130;
-    const shadowD = 32;
-    this.sunLight.shadow.camera.left = -shadowD;
-    this.sunLight.shadow.camera.right = shadowD;
-    this.sunLight.shadow.camera.top = shadowD;
-    this.sunLight.shadow.camera.bottom = -shadowD;
-    this.sunLight.shadow.bias = -0.0001;
-    this.sunLight.shadow.normalBias = 0.02;
+    this.sunLight.castShadow = !isMobile;
+    if (!isMobile) {
+      this.sunLight.shadow.mapSize.width = SUN_SHADOW_MAP_SIZE;
+      this.sunLight.shadow.mapSize.height = SUN_SHADOW_MAP_SIZE;
+      this.sunLight.shadow.camera.near = 0.5;
+      this.sunLight.shadow.camera.far = 130;
+      this.sunLight.shadow.camera.left = -SUN_SHADOW_FRUSTUM_SIZE;
+      this.sunLight.shadow.camera.right = SUN_SHADOW_FRUSTUM_SIZE;
+      this.sunLight.shadow.camera.top = SUN_SHADOW_FRUSTUM_SIZE;
+      this.sunLight.shadow.camera.bottom = -SUN_SHADOW_FRUSTUM_SIZE;
+      this.sunLight.shadow.bias = -0.0001;
+      this.sunLight.shadow.normalBias = 0.02;
+    }
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Ambient fill
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+    // Ambient fill (compensated on mobile for crisp lighting without shadow pass)
+    const ambientIntensity = isMobile ? MOBILE_AMBIENT_LIGHT_INTENSITY : DESKTOP_AMBIENT_LIGHT_INTENSITY;
+    const ambientLight = new THREE.AmbientLight(0xffffff, ambientIntensity);
     this.scene.add(ambientLight);
   }
 
@@ -228,12 +248,14 @@ export class WorldEngine {
     this.renderer.domElement.style.height = '100%';
     this.renderer.domElement.style.display = 'block';
     // Adaptive DPR: Cap at 1.15 on mobile (60 FPS silky smooth), 1.5 on desktop
-    const targetDPR = isMobile ? 1.15 : 1.5;
+    const targetDPR = isMobile ? MOBILE_TARGET_DPR : DESKTOP_TARGET_DPR;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, targetDPR));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = !isMobile;
+    if (!isMobile) {
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
+    this.renderer.toneMapping = isMobile ? THREE.ReinhardToneMapping : THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = isMobile ? 1.0 : 1.05;
 
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -605,22 +627,23 @@ export class WorldEngine {
     const elapsedTime = this.clock.getElapsedTime();
 
     // 1. Update Kinematics Controller
-    // Camera-relative forward & right horizontal vectors for natural intuitive controls
-    const camForward = new THREE.Vector3();
-    this.camera.getWorldDirection(camForward);
-    camForward.y = 0;
-    if (camForward.lengthSq() < 0.001) camForward.set(0, 0, 1);
-    camForward.normalize();
+    // Camera-relative forward & right horizontal vectors for natural intuitive controls (Zero-allocation)
+    this.camera.getWorldDirection(this._scratchCamForward);
+    this._scratchCamForward.y = 0;
+    if (this._scratchCamForward.lengthSq() < 0.001) {
+      this._scratchCamForward.set(0, 0, 1);
+    } else {
+      this._scratchCamForward.normalize();
+    }
 
-    const camRight = new THREE.Vector3();
-    camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
+    this._scratchCamRight.crossVectors(this._scratchCamForward, this._worldUp).normalize();
 
     const { state, justBounced } = this.controller.update(
       deltaTime,
       this.inputState,
       this.currentRoom,
-      camForward,
-      camRight
+      this._scratchCamForward,
+      this._scratchCamRight
     );
 
     if (justBounced) {
@@ -662,10 +685,12 @@ export class WorldEngine {
       }
     }
 
-    // 1c. Dynamic Player-Centric Shadow Tracking (Shadows follow player everywhere across 180m)
-    this.sunLight.position.set(state.position.x + 32, 45, state.position.z + 22);
-    this.sunLight.target.position.copy(state.position);
-    this.sunLight.target.updateMatrixWorld();
+    // 1c. Dynamic Player-Centric Shadow Tracking (Follows player everywhere across 260m on desktop)
+    if (this.sunLight.castShadow) {
+      this.sunLight.position.set(state.position.x + 32, 45, state.position.z + 22);
+      this.sunLight.target.position.copy(state.position);
+      this.sunLight.target.updateMatrixWorld();
+    }
 
     // 1d. Dispatch real-time coordinates and heading for HUD Radar Mini-Map
     this.callbacks.onPlayerUpdate?.({ x: state.position.x, z: state.position.z }, state.heading);
@@ -813,8 +838,8 @@ export class WorldEngine {
       this.camera.position.y += (targetPos.y + camHeight - this.camera.position.y) * 0.08;
       this.camera.position.z += (behindZ - this.camera.position.z) * 0.08;
 
-      const lookTarget = targetPos.clone().add(new THREE.Vector3(0, 0.85, 0));
-      this.camera.lookAt(lookTarget);
+      this._scratchLookTarget.set(targetPos.x, targetPos.y + 0.85, targetPos.z);
+      this.camera.lookAt(this._scratchLookTarget);
     } else {
       // Orbit Camera centered on tomato
       const cx = targetPos.x + this.orbitRadius * Math.sin(this.orbitPhi) * Math.sin(this.orbitTheta);
@@ -822,7 +847,8 @@ export class WorldEngine {
       const cz = targetPos.z + this.orbitRadius * Math.sin(this.orbitPhi) * Math.cos(this.orbitTheta);
 
       this.camera.position.set(cx, cy, cz);
-      this.camera.lookAt(targetPos.clone().add(new THREE.Vector3(0, 0.8, 0)));
+      this._scratchLookTarget.set(targetPos.x, targetPos.y + 0.8, targetPos.z);
+      this.camera.lookAt(this._scratchLookTarget);
     }
   }
 

@@ -310,10 +310,6 @@ export class RiceFieldBuilder {
       );
       lantern.position.set(-16.5, 2.15, lz);
       group.add(lantern);
-
-      const lampLight = new THREE.PointLight(0xffbb44, 0.8, 6.0, 1.8);
-      lampLight.position.set(-16.5, 2.1, lz);
-      group.add(lampLight);
     });
 
     // ─── 7. Wooden Footbridge Over Canal ───

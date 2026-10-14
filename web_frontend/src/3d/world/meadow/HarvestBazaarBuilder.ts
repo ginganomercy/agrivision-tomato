@@ -309,10 +309,6 @@ export class HarvestBazaarBuilder {
         );
         lantern.position.set(lx, 3.3, az);
         group.add(lantern);
-
-        const lanternLight = new THREE.PointLight(0xff4422, 0.7, 7, 2);
-        lanternLight.position.set(lx, 3.1, az);
-        group.add(lanternLight);
       }
     });
 
@@ -327,17 +323,13 @@ export class HarvestBazaarBuilder {
       gatePost.castShadow = true;
       group.add(gatePost);
 
-      // Post cap ornament
+      // Post cap ornament (emissive glow)
       const cap = new THREE.Mesh(
         new THREE.SphereGeometry(0.38, 7, 6),
         lanternGlowMat
       );
       cap.position.set(gx, 5.38, -22);
       group.add(cap);
-
-      const capLight = new THREE.PointLight(0xffee44, 1.2, 10, 1.5);
-      capLight.position.set(gx, 5.3, -22);
-      group.add(capLight);
     });
 
     // Gate crossbeam
@@ -348,16 +340,6 @@ export class HarvestBazaarBuilder {
     gate.position.set(0, 4.8, -22);
     gate.castShadow = true;
     group.add(gate);
-
-    // ─── 6. Ambient Bazaar Lighting ───
-    // Warm overhead area light approximated with 2 point lights
-    const warmA = new THREE.PointLight(0xffcc88, 0.6, 50, 0.4);
-    warmA.position.set(-10, 8, -5);
-    group.add(warmA);
-
-    const warmB = new THREE.PointLight(0xffdd99, 0.6, 50, 0.4);
-    warmB.position.set(10, 8, 5);
-    group.add(warmB);
 
     return group;
   }
