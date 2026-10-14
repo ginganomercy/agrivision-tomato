@@ -20,13 +20,34 @@ jobs:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
+      - name: 🔍 Detect Changes in Backend / ML Modules
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'api_backend/**'
+              - 'requirements.txt'
+              - '.github/workflows/deploy.yml'
+
       - name: 🐍 Set up Python 3.10
+        if: steps.filter.outputs.backend == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+
+      - name: ⚡ Persistent Pip & PyTorch Wheel Cache
+        if: steps.filter.outputs.backend == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-torch-${{ hashFiles('api_backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-torch-
+            ${{ runner.os }}-pip-
 
       - name: 📦 Install Testing & ML Dependencies
+        if: steps.filter.outputs.backend == 'true'
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
@@ -34,28 +55,50 @@ jobs:
           pip install flake8 pytest httpx pytest-mock
 
       - name: 🔍 Static Code Analysis (Flake8)
+        if: steps.filter.outputs.backend == 'true'
         run: |
           flake8 api_backend/src api_backend/tests --count --select=E9,F63,F7,F82 --show-source --statistics
 
       - name: 🧪 Execute Unit & Integration Test Suite (Pytest)
+        if: steps.filter.outputs.backend == 'true'
         run: |
           pytest api_backend/tests -v --tb=short
+
+      - name: ⚡ Fast-Track Notice
+        if: steps.filter.outputs.backend == 'false'
+        run: |
+          echo "⚡ [FAST-TRACK] Tidak ada perubahan pada api_backend atau requirements.txt."
+          echo "⚡ Unduhan PyTorch dan Pytest dilewati secara aman untuk mempercepat pipeline CI/CD."
 
   # =========================================================================
   # STAGE 2: 🐳 Docker Container Build & Artifact Verification
   # =========================================================================
   build:
     name: 🐳 Verify Docker Build & Container Integrity
-    needs: test
+    # Eksekusi paralel bersamaan dengan STAGE 1 (tidak perlu menunggu test selesai)
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
+      - name: 🔍 Detect Changed Modules for Docker Build
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'api_backend/**'
+              - 'requirements.txt'
+              - '.github/workflows/deploy.yml'
+            frontend:
+              - 'web_frontend/**'
+              - '.github/workflows/deploy.yml'
+
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: 🏗️ Build Docker Image API (Validation)
+        if: steps.filter.outputs.backend == 'true'
         uses: docker/build-push-action@v5
         with:
           context: api_backend
@@ -66,6 +109,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: 🏗️ Build Docker Image Web Frontend (Validation)
+        if: steps.filter.outputs.frontend == 'true'
         uses: docker/build-push-action@v5
         with:
           context: web_frontend
@@ -74,6 +118,11 @@ jobs:
           tags: agrivision_web:validation
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: ⚡ Fast-Track Docker Build Notice
+        if: steps.filter.outputs.backend == 'false' && steps.filter.outputs.frontend == 'false'
+        run: |
+          echo "⚡ Tidak ada perubahan kode aplikasi yang perlu di-build ulang di Docker."
 
   # =========================================================================
   # STAGE 3: 🚢 Zero-Downtime Deployment to Bare-Metal Server (Docker Swarm)
