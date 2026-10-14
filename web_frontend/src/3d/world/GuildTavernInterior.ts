@@ -20,7 +20,6 @@ export class GuildTavernInterior {
   private doorRotation: number = 0;
   private fireplaceLight!: THREE.PointLight;
   private dustPoints!: THREE.Points;
-  private dustPositions!: Float32Array;
 
   // Spatial Dimensions (Meters)
   public static readonly CENTER_X = -14.0;
@@ -30,6 +29,13 @@ export class GuildTavernInterior {
   public static readonly DEPTH = 18.0;   // Z: -9.0 to 9.0 local
   public static readonly WALL_HEIGHT = 4.8;
   public static readonly RIDGE_HEIGHT = 7.6;
+
+  // Cached static door world position for zero-alloc frame loop
+  private static readonly EXIT_DOOR_WORLD_POS = new THREE.Vector3(
+    -14.0,
+    -39.90 + 1.6,
+    18.0 + 8.8
+  );
 
   constructor() {
     this.group = new THREE.Group();
@@ -561,15 +567,17 @@ export class GuildTavernInterior {
         chandelierGroup.add(lantern);
       }
 
-      // Warm Point Light
-      const pLight = new THREE.PointLight(0xffaa44, 1.4, 14, 1.2);
-      pLight.position.set(0, -0.2, 0);
-      chandelierGroup.add(pLight);
+      // Warm Point Light (hero chandelier at center cz === 0 and banquet cz === -4.5)
+      if (cz !== 4.5) {
+        const pLight = new THREE.PointLight(0xffaa44, 1.8, 16, 1.2);
+        pLight.position.set(0, -0.2, 0);
+        chandelierGroup.add(pLight);
+      }
 
       this.group.add(chandelierGroup);
     });
 
-    // 2. 6 Cast Iron Wall Sconces (Illuminates walls and corners so nothing is pitch black!)
+    // 2. 6 Cast Iron Wall Sconces (High-emissive flames; geometry intact with zero fragment light bloat)
     const halfW = GuildTavernInterior.WIDTH / 2; // 12.0
     [-6.0, 0, 6.0].forEach(wz => {
       // West Sconces
@@ -582,10 +590,6 @@ export class GuildTavernInterior {
       const flameW = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 6), lanternGlowMat);
       flameW.position.set(0.18, 0.14, 0);
       sconceW.add(flameW);
-
-      const lightW = new THREE.PointLight(0xff9933, 1.15, 9.5, 1.2);
-      lightW.position.set(0.2, 0.2, 0);
-      sconceW.add(lightW);
 
       this.group.add(sconceW);
 
@@ -600,15 +604,11 @@ export class GuildTavernInterior {
       flameE.position.set(-0.18, 0.14, 0);
       sconceE.add(flameE);
 
-      const lightE = new THREE.PointLight(0xff9933, 1.15, 9.5, 1.2);
-      lightE.position.set(-0.2, 0.2, 0);
-      sconceE.add(lightE);
-
       this.group.add(sconceE);
     });
 
-    // 3. Warm Ambient Fill
-    const ambientIn = new THREE.AmbientLight(0xffe4b5, 0.65);
+    // 3. Warm Ambient Fill (provides balanced tavern illumination across all nooks)
+    const ambientIn = new THREE.AmbientLight(0xffe4b5, 0.85);
     this.group.add(ambientIn);
   }
 
@@ -696,15 +696,15 @@ export class GuildTavernInterior {
     // 100 gentle floating golden dust motes around the chandeliers
     const count = 100;
     const geometry = new THREE.BufferGeometry();
-    this.dustPositions = new Float32Array(count * 3);
+    const dustPositions = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
-      this.dustPositions[i * 3 + 0] = (Math.random() - 0.5) * 18.0;
-      this.dustPositions[i * 3 + 1] = 1.0 + Math.random() * 4.8;
-      this.dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 14.0;
+      dustPositions[i * 3 + 0] = (Math.random() - 0.5) * 18.0;
+      dustPositions[i * 3 + 1] = 1.0 + Math.random() * 4.8;
+      dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 14.0;
     }
 
-    geometry.setAttribute('position', new THREE.BufferAttribute(this.dustPositions, 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
     this.disposables.push(geometry);
 
     const mat = new THREE.PointsMaterial({
@@ -726,13 +726,8 @@ export class GuildTavernInterior {
    * 3. Gentle floating dust motes
    */
   public update(deltaTime: number, playerPosition: THREE.Vector3): void {
-    // 1. Calculate distance to interior exit door (Center x = -14, z = 26.8 in world)
-    const exitDoorWorldPos = new THREE.Vector3(
-      GuildTavernInterior.CENTER_X,
-      GuildTavernInterior.FLOOR_Y + 1.6,
-      GuildTavernInterior.CENTER_Z + 8.8
-    );
-    const distToExit = playerPosition.distanceTo(exitDoorWorldPos);
+    // 1. Distance to interior exit door (zero allocation)
+    const distToExit = playerPosition.distanceTo(GuildTavernInterior.EXIT_DOOR_WORLD_POS);
 
     // Hysteresis Door Swing: Open when dist <= 2.8m, close when dist >= 3.8m
     let targetAngle = 0; // Closed (0 rad)
@@ -750,14 +745,10 @@ export class GuildTavernInterior {
       this.fireplaceLight.intensity = flicker;
     }
 
-    // 3. Dust motes slow drift
-    if (this.dustPoints && this.dustPositions) {
-      const time = Date.now() * 0.0006;
-      const count = this.dustPositions.length / 3;
-      for (let i = 0; i < count; i++) {
-        this.dustPositions[i * 3 + 1] += Math.sin(time + i) * 0.003;
-      }
-      this.dustPoints.geometry.attributes.position.needsUpdate = true;
+    // 3. Dust motes slow drift (GPU transformation — zero buffer re-upload)
+    if (this.dustPoints) {
+      this.dustPoints.rotation.y += deltaTime * 0.02;
+      this.dustPoints.position.y = Math.sin(Date.now() * 0.0008) * 0.12;
     }
   }
 

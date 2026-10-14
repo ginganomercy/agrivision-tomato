@@ -97,9 +97,7 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          background: 'rgba(15, 23, 42, 0.88)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
+          background: 'rgba(15, 23, 42, 0.94)',
           padding: isMobileLandscape ? '5px 8px' : '6px 12px',
           borderRadius: 12,
           border: '1px solid rgba(16, 185, 129, 0.4)',
@@ -125,9 +123,7 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: isMobileLandscape ? 6 : 8,
-          background: 'rgba(15, 23, 42, 0.85)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
+          background: 'rgba(15, 23, 42, 0.94)',
           padding: isMobileLandscape ? '5px 8px' : '6px 11px',
           borderRadius: 12,
           border: '1px solid rgba(255, 255, 255, 0.12)',
@@ -175,12 +171,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             borderRadius: 10,
             fontSize: 10.5,
             fontWeight: 600,
-            background: isFullscreen ? 'rgba(56, 189, 248, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+            background: isFullscreen ? 'rgba(56, 189, 248, 0.85)' : 'rgba(15, 23, 42, 0.92)',
             border: `1px solid ${isFullscreen ? '#38BDF8' : 'rgba(255, 255, 255, 0.15)'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             transition: 'all 0.2s'
           }}
           title={isFullscreen ? 'Keluar Layar Penuh' : 'Mode Layar Penuh (Fullscreen)'}
@@ -199,12 +193,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             borderRadius: 10,
             fontSize: 10.5,
             fontWeight: 600,
-            background: isTiltEnabled ? 'rgba(16, 185, 129, 0.9)' : 'rgba(15, 23, 42, 0.85)',
+            background: isTiltEnabled ? 'rgba(16, 185, 129, 0.9)' : 'rgba(15, 23, 42, 0.92)',
             border: `1px solid ${isTiltEnabled ? '#34D399' : 'rgba(255, 255, 255, 0.15)'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             boxShadow: isTiltEnabled ? '0 0 14px rgba(16, 185, 129, 0.5)' : 'none',
             transition: 'all 0.2s'
           }}
@@ -225,12 +217,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             borderRadius: 10,
             fontSize: 10.5,
             fontWeight: 600,
-            background: cameraMode === 'chase' ? 'rgba(15, 23, 42, 0.85)' : 'rgba(5, 150, 105, 0.9)',
+            background: cameraMode === 'chase' ? 'rgba(15, 23, 42, 0.92)' : 'rgba(5, 150, 105, 0.9)',
             border: `1px solid ${cameraMode === 'chase' ? 'rgba(255, 255, 255, 0.15)' : '#34D399'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             transition: 'all 0.2s'
           }}
           title="Ganti Mode Kamera (Chase / Orbit)"
@@ -250,12 +240,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             borderRadius: 10,
             fontSize: 10.5,
             fontWeight: 600,
-            background: mascotMode ? 'rgba(225, 29, 72, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+            background: mascotMode ? 'rgba(225, 29, 72, 0.85)' : 'rgba(15, 23, 42, 0.92)',
             border: `1px solid ${mascotMode ? '#FB7185' : 'rgba(255, 255, 255, 0.15)'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             transition: 'all 0.2s'
           }}
           title="Toggle Wajah Maskot Tomat"
@@ -274,12 +262,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             borderRadius: 10,
             fontSize: 10.5,
             fontWeight: 600,
-            background: showMiniMap ? 'rgba(16, 185, 129, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+            background: showMiniMap ? 'rgba(16, 185, 129, 0.85)' : 'rgba(15, 23, 42, 0.92)',
             border: `1px solid ${showMiniMap ? '#34D399' : 'rgba(255, 255, 255, 0.15)'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             transition: 'all 0.2s'
           }}
           title={showMiniMap ? 'Sembunyikan Mini-Map Radar' : 'Tampilkan Mini-Map Radar'}
@@ -299,12 +285,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             borderRadius: 10,
             fontSize: 10.5,
             fontWeight: 600,
-            background: isInventoryOpen ? 'rgba(234, 179, 8, 0.9)' : 'rgba(15, 23, 42, 0.85)',
+            background: isInventoryOpen ? 'rgba(234, 179, 8, 0.9)' : 'rgba(15, 23, 42, 0.92)',
             border: `1px solid ${isInventoryOpen ? '#FDE047' : 'rgba(234, 179, 8, 0.45)'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             boxShadow: isInventoryOpen ? '0 0 14px rgba(234, 179, 8, 0.5)' : 'none',
             transition: 'all 0.2s'
           }}
@@ -325,12 +309,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             borderRadius: 10,
             fontSize: 10.5,
             fontWeight: 600,
-            background: isQuestBoardOpen ? 'rgba(217, 119, 6, 0.95)' : 'rgba(15, 23, 42, 0.85)',
+            background: isQuestBoardOpen ? 'rgba(217, 119, 6, 0.95)' : 'rgba(15, 23, 42, 0.92)',
             border: `1px solid ${isQuestBoardOpen ? '#FDE047' : 'rgba(217, 119, 6, 0.5)'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             boxShadow: isQuestBoardOpen ? '0 0 14px rgba(217, 119, 6, 0.5)' : 'none',
             transition: 'all 0.2s'
           }}
@@ -350,12 +332,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             padding: isMobileLandscape ? '6px 7px' : '6px 8px',
             borderRadius: 10,
             fontSize: 10.5,
-            background: isAudioEnabled ? 'rgba(5, 150, 105, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+            background: isAudioEnabled ? 'rgba(5, 150, 105, 0.85)' : 'rgba(15, 23, 42, 0.92)',
             border: `1px solid ${isAudioEnabled ? '#34D399' : 'rgba(255, 255, 255, 0.15)'}`,
             color: '#FFF',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             transition: 'all 0.2s'
           }}
           title={isAudioEnabled ? 'Matikan Suara FX' : 'Nyalakan Suara FX'}
@@ -373,12 +353,10 @@ export const HUDStatusBar: React.FC<HUDStatusBarProps> = ({
             padding: isMobileLandscape ? '6px 7px' : '6px 8px',
             borderRadius: 10,
             fontSize: 10.5,
-            background: 'rgba(15, 23, 42, 0.85)',
+            background: 'rgba(15, 23, 42, 0.92)',
             border: '1px solid rgba(255, 255, 255, 0.15)',
             color: '#E2E8F0',
             cursor: 'pointer',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
             transition: 'all 0.2s'
           }}
           title="Panduan Kontrol Eksplorasi"

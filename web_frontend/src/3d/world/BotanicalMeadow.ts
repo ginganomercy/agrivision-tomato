@@ -43,6 +43,9 @@ export class BotanicalMeadow {
   private mushroomGroup!: THREE.Group;
   private bazaarGroup!: THREE.Group;
 
+  // Static cached vectors for zero-alloc frame loop
+  private static readonly DOOR_WORLD_POS = new THREE.Vector3(-14.0, 1.2, 22.05);
+
   // Spatial boundaries (meters)
   public static readonly MEADOW_SIZE = 260; // 260x260m open world
   public static readonly BOUNDARY_RADIUS = 122.0;
@@ -311,8 +314,7 @@ export class BotanicalMeadow {
   public updateTavernDoor(deltaTime: number, playerPos: THREE.Vector3): void {
     if (!this.tavernDoorHingeGroup) return;
 
-    const doorWorldPos = new THREE.Vector3(-14.0, 1.2, 22.05);
-    const distToDoor = playerPos.distanceTo(doorWorldPos);
+    const distToDoor = playerPos.distanceTo(BotanicalMeadow.DOOR_WORLD_POS);
 
     let targetAngle = 0;
     if (distToDoor <= 2.5 && playerPos.z >= 22.0 && playerPos.z <= 25.2) {

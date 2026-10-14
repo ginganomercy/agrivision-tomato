@@ -50,6 +50,7 @@ export class MonsterManager {
   // Hit burst particle system
   private hitParticlesGroup: THREE.Group;
   private hitParticlePoints: { mesh: THREE.Mesh; vel: THREE.Vector3; life: number }[] = [];
+  private readonly _unitScale = new THREE.Vector3(1, 1, 1);
 
   // Quest State
   public static readonly TARGET_COUNT = 5;
@@ -422,7 +423,7 @@ export class MonsterManager {
         m.flinchTimer -= dt;
         m.bodyMeshGroup.scale.set(1.15, 0.85, 1.15); // Squish from hit
       } else {
-        m.bodyMeshGroup.scale.lerp(new THREE.Vector3(1, 1, 1), 0.2);
+        m.bodyMeshGroup.scale.lerp(this._unitScale, 0.2);
       }
     });
 

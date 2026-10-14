@@ -43,8 +43,6 @@ export const FloatingInteractButton: React.FC<FloatingInteractButtonProps> = ({
           letterSpacing: '0.3px',
           boxShadow: '0 6px 24px rgba(234, 179, 8, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4)',
           cursor: 'pointer',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
           transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
         }}
       >

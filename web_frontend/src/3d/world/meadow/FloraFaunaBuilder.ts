@@ -456,7 +456,7 @@ export class FloraFaunaBuilder {
     butterflies: Butterfly[],
     cloudsGroup: THREE.Group,
     particlePoints: THREE.Points,
-    particlePositions: Float32Array
+    _particlePositions?: Float32Array
   ): void {
     // 1. Butterflies
     butterflies.forEach(b => {
@@ -479,18 +479,10 @@ export class FloraFaunaBuilder {
       if (cloud.position.x > 90) cloud.position.x = -90;
     });
 
-    // 3. Spore Particles
+    // 3. Spore Particles (GPU transform — zero CPU-to-GPU buffer upload overhead)
     if (particlePoints) {
-      const pos = particlePositions;
-      const count = FloraFaunaBuilder.PARTICLE_COUNT;
-      for (let i = 0; i < count; i++) {
-        pos[i * 3 + 0] += Math.sin(pos[i * 3 + 1] * 0.4) * 0.3 * deltaTime;
-        pos[i * 3 + 1] += Math.cos(pos[i * 3 + 0] * 0.4) * 0.2 * deltaTime;
-
-        if (pos[i * 3 + 1] > 8.0) pos[i * 3 + 1] = 0.5;
-        if (pos[i * 3 + 1] < 0.3) pos[i * 3 + 1] = 7.8;
-      }
-      particlePoints.geometry.attributes.position.needsUpdate = true;
+      particlePoints.rotation.y += deltaTime * 0.035;
+      particlePoints.position.y = Math.sin(elapsedTime * 0.6) * 0.25;
     }
   }
 }

@@ -244,11 +244,6 @@ export class AncientRuinsBuilder {
       group.add(wall);
     });
 
-    // ─── 7. Atmospheric Fog Emitter (local dense mist effect via point light tint) ───
-    const mistLight = new THREE.PointLight(0x8899aa, 0.4, 30, 0.8);
-    mistLight.position.set(0, 3, 0);
-    group.add(mistLight);
-
     // ─── 8. Zone Entry Stone Arch Sign Posts ───
     const signPostGeo = new THREE.CylinderGeometry(0.12, 0.14, 3.2, 6);
     disposables.push(signPostGeo);

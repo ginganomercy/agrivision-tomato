@@ -270,10 +270,6 @@ export class LakeAndBridgeBuilder {
         const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.38, 0.24), lanternGlowMat);
         lantern.position.set(lx, 2.0, midSpanZ);
         lakeGroup.add(lantern);
-
-        const bridgeLight = new THREE.PointLight(0xffaa44, 0.9, 8.0, 1.5);
-        bridgeLight.position.set(lx, 2.0, midSpanZ);
-        lakeGroup.add(bridgeLight);
       });
 
       // Entrance Brass Lanterns on corner shore posts

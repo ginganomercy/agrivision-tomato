@@ -34,9 +34,9 @@ const MOBILE_HEMI_LIGHT_INTENSITY = 1.15;
 const DESKTOP_HEMI_LIGHT_INTENSITY = 0.95;
 const SUN_LIGHT_INTENSITY = 1.4;
 const SUN_SHADOW_FRUSTUM_SIZE = 32;
-const SUN_SHADOW_MAP_SIZE = 2048;
+const SUN_SHADOW_MAP_SIZE = 1024; // 1024px with PCFSoftShadowMap produces crisp soft shadows with 75% less GPU fillrate than 2048px
 const MOBILE_TARGET_DPR = 1.15;
-const DESKTOP_TARGET_DPR = 1.5;
+const DESKTOP_TARGET_DPR = 1.35;
 
 export class WorldEngine {
   // Core Three.js components
@@ -192,6 +192,9 @@ export class WorldEngine {
     this.scene.add(this.collectibles.getRoot());
     this.scene.add(this.monsters.getRoot());
     this.scene.add(this.tomatoModel.getRoot());
+
+    // Initial Room Occlusion Culling (underground tavern hidden by default when outdoor)
+    this.updateRoomVisibility(this.currentRoom);
 
     // 5. Setup Lighting
     this.setupLighting();
@@ -437,6 +440,9 @@ export class WorldEngine {
     setTimeout(() => {
       const prevRoom = this.currentRoom;
       this.currentRoom = targetRoom;
+
+      // Update Room Occlusion Culling (hide outdoor world in tavern, hide underground tavern in meadow)
+      this.updateRoomVisibility(targetRoom);
 
       // Adapt Scene Background & Fog based on room location
       if (targetRoom === 'tavern') {
@@ -791,9 +797,12 @@ export class WorldEngine {
     }
 
     // 6. Update Meadow Living Ecosystem, Animated Doors, Tavern Interior & NPCs
-    this.meadow.update(deltaTime, elapsedTime);
-    this.meadow.updateTavernDoor(deltaTime, state.position);
-    this.tavernInterior.update(deltaTime, state.position);
+    if (this.currentRoom !== 'tavern') {
+      this.meadow.update(deltaTime, elapsedTime);
+      this.meadow.updateTavernDoor(deltaTime, state.position);
+    } else {
+      this.tavernInterior.update(deltaTime, state.position);
+    }
     this.npcManager.update(deltaTime, state.position);
 
     // 6b. Check Proximity to Interactable NPCs or Bounty Board
@@ -811,6 +820,20 @@ export class WorldEngine {
       this.renderer.render(this.scene, this.camera);
     }
   };
+
+  private updateRoomVisibility(targetRoom: RoomLocation): void {
+    if (targetRoom === 'tavern') {
+      // Inside Tavern: strictly hide outdoor meadow & greenhouse to free GPU draw calls
+      this.tavernInterior.getRoot().visible = true;
+      this.meadow.getRoot().visible = false;
+      this.greenhouse.getRoot().visible = false;
+    } else {
+      // Outdoor / Greenhouse: hide underground tavern interior completely
+      this.tavernInterior.getRoot().visible = false;
+      this.meadow.getRoot().visible = true;
+      this.greenhouse.getRoot().visible = true;
+    }
+  }
 
   private updateCamera(targetPos: THREE.Vector3, targetHeading: number, currentRoom: RoomLocation): void {
     if (this.cameraMode === 'chase') {

@@ -151,15 +151,6 @@ export class MushroomForestBuilder {
       gillIM.instanceMatrix.needsUpdate = true;
 
       group.add(stemIM, capIM, gillIM);
-
-      // PointLight only for large mushrooms (keep emissive glow, remove most lights)
-      group_mushrooms.forEach(({ x, z, scale }, i) => {
-        if (scale > 1.4 && i === 0) { // max 1 light per color group
-          const capLight = new THREE.PointLight(mushroomCapColors[colorIdx], 0.5, 4, 2);
-          capLight.position.set(x, 1.5, z);
-          group.add(capLight);
-        }
-      });
     });
 
 
@@ -291,10 +282,6 @@ export class MushroomForestBuilder {
       patch.rotation.x = -Math.PI / 2;
       patch.position.set(gx, 0.02, gz);
       group.add(patch);
-
-      const patchLight = new THREE.PointLight(0x8844ff, 0.5, 6, 2);
-      patchLight.position.set(gx, 0.5, gz);
-      group.add(patchLight);
     });
 
     // ─── 5. Atmospheric Spore Particle System ───
@@ -320,11 +307,6 @@ export class MushroomForestBuilder {
 
     const sporePoints = new THREE.Points(sporeGeo, sporeMat);
     group.add(sporePoints);
-
-    // ─── 6. Zone ambient purple light ───
-    const ambientLight = new THREE.PointLight(0x441177, 0.8, 45, 0.5);
-    ambientLight.position.set(0, 8, 0);
-    group.add(ambientLight);
 
     return group;
   }

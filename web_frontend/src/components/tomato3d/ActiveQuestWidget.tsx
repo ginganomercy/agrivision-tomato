@@ -33,8 +33,8 @@ export const ActiveQuestWidget: React.FC<ActiveQuestWidgetProps> = ({
           top: isMobileLandscape ? 8 : 64,
           left: 12,
           background: isDone 
-            ? 'rgba(6, 78, 59, 0.88)' 
-            : 'rgba(15, 23, 42, 0.85)',
+            ? 'rgba(6, 78, 59, 0.95)' 
+            : 'rgba(15, 23, 42, 0.95)',
           border: isDone
             ? '1px solid #34D399'
             : '1px solid rgba(234, 179, 8, 0.5)',
@@ -43,8 +43,6 @@ export const ActiveQuestWidget: React.FC<ActiveQuestWidgetProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
           boxShadow: isDone ? '0 4px 16px rgba(16, 185, 129, 0.3)' : '0 4px 16px rgba(0, 0, 0, 0.4)',
           zIndex: 22,
           pointerEvents: 'auto',
@@ -113,9 +111,7 @@ export const ActiveQuestWidget: React.FC<ActiveQuestWidgetProps> = ({
           top: '25%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.98), rgba(5, 150, 105, 0.98))',
           border: '2px solid #6EE7B7',
           borderRadius: 20,
           padding: '16px 28px',
