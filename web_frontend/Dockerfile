@@ -7,11 +7,11 @@
 FROM oven/bun:1 AS builder
 WORKDIR /app
 
-# Salin package.json
-COPY package.json ./
+# Salin package.json dan bun.lockb
+COPY package.json bun.lockb* ./
 
 # Install dependensi menggunakan Bun secara murni di lingkungan Linux
-RUN bun install
+RUN bun install --frozen-lockfile || bun install
 
 # Salin seluruh source code (node_modules host dikecualikan via .dockerignore)
 COPY . .
